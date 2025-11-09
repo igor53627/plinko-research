@@ -69,7 +69,7 @@ This document provides complete specifications to build a working Proof of Conce
 │  ┌──────┴───────────┐   ┌──────┴────────────┐                  │
 │  │ SERVICE 2:       │   │ SERVICE 3:        │                  │
 │  │ DB Generator     │   │ Hint Generator    │                  │
-│  │ (Python)         │   │ (C++ FrodoPIR)    │                  │
+│  │ (Python)         │   │ (Rust FrodoPIR)   │                  │
 │  │ (init only)      │   │ (init only)       │                  │
 │  └──────┬───────────┘   └───────────────────┘                  │
 │         │                                                        │
@@ -91,7 +91,7 @@ This document provides complete specifications to build a working Proof of Conce
 |---------|---------|------------|------|
 | 1. Ethereum Mock | Provides test data (4,096 accounts) | Foundry Anvil | Always |
 | 2. DB Generator | Extracts state → database.bin | Python | Init only |
-| 3. Hint Generator | database.bin → hint.bin | C++ (FrodoPIR) | Init only |
+| 3. Hint Generator | database.bin → hint.bin | Rust (FrodoPIR) | Init only |
 | 4. PIR Server | Answers PIR queries | Node.js + Express | Always |
 | 5. CDN Mock | Serves hint.bin for download | nginx | Always |
 | 6. Ambire Wallet | UI + FrodoPIRProvider | React + Vite | Always |
@@ -137,7 +137,7 @@ frodopir-poc/
 │   │   └── config.json            # Database configuration
 │   │
 │   ├── hint-generator/
-│   │   ├── Dockerfile             # Multi-stage build (C++ compile)
+│   │   ├── Dockerfile             # Multi-stage build (Rust compile)
 │   │   ├── generate-hint.sh       # Wrapper script
 │   │   └── frodopir/              # Git submodule or copied source
 │   │
@@ -368,7 +368,7 @@ if __name__ == '__main__':
 ```dockerfile
 # Multi-stage build: Compile FrodoPIR, then generate hint
 
-# Stage 1: Build C++ FrodoPIR
+# Stage 1: Build Rust FrodoPIR
 FROM rust:1.75-slim as builder
 
 WORKDIR /build
@@ -429,7 +429,7 @@ echo "Database: $DATABASE"
 echo "Entries: $NUM_ENTRIES"
 echo "Entry size: $ENTRY_SIZE bytes"
 
-# Generate hint (C++ command - adapt based on actual FrodoPIR CLI)
+# Generate hint (Rust binary from Brave's FrodoPIR implementation)
 frodopir-hint-gen \
   --database "$DATABASE" \
   --num-entries $NUM_ENTRIES \
@@ -592,9 +592,9 @@ module.exports = { computeResponse };
 ```
 
 **Implementation Options**:
-1. **Native Addon**: Wrap C++ FrodoPIR with node-addon-api
-2. **WASM**: Compile Rust frodo-pir to WebAssembly
-3. **Subprocess**: Call Rust binary via `child_process.spawn()`
+1. **WASM**: Compile Rust frodo-pir to WebAssembly (best for production)
+2. **Subprocess**: Call Rust binary via `child_process.spawn()` (easiest for PoC)
+3. **Native Addon**: Wrap Rust with neon-bindings
 4. **Mock**: For UI testing only (doesn't prove privacy)
 
 **Recommended**: Use subprocess approach for PoC:
@@ -1228,28 +1228,26 @@ docker-compose up
 
 Current PoC uses mocks for query/response computation. To prove actual privacy:
 
-**Option A: Use Rust via WASM**
-```bash
-cd services/pir-server
-# Add Rust FrodoPIR as WASM dependency
-npm install @frodopir/wasm  # (if published)
-# Or compile manually:
-wasm-pack build --target bundler
-```
-
-**Option B: Use C++ via Native Addon**
-```bash
-cd services/pir-server
-# Create native addon with node-gyp
-npm install node-addon-api
-# Wrap C++ FrodoPIR implementation
-```
-
-**Option C: Call Rust Binary via Subprocess**
+**Option A: Call Rust Binary via Subprocess** (Simplest for PoC)
 ```javascript
-// Simplest for PoC
 const { spawn } = require('child_process');
 const proc = spawn('/usr/local/bin/frodopir-server', ['--query', ...]);
+```
+
+**Option B: Use Rust via WASM** (Best for production)
+```bash
+cd services/pir-server
+# Compile Rust FrodoPIR to WebAssembly
+wasm-pack build --target bundler
+npm install ./pkg
+```
+
+**Option C: Use Rust via Neon Bindings** (Best performance)
+```bash
+cd services/pir-server
+# Create native Node.js addon from Rust
+npm install neon-cli
+# Wrap Rust FrodoPIR implementation
 ```
 
 ### 8.2 Scale to Full Database
@@ -1279,7 +1277,7 @@ This PoC specification provides everything needed to build a working FrodoPIR + 
 - ✅ ~100ms query latency (acceptable for RPC)
 
 **What's Missing** (for production):
-- ⚠️ Real FrodoPIR implementation (currently mocked)
+- ⚠️ Real FrodoPIR implementation (currently mocked - use Rust via WASM/subprocess)
 - ⚠️ Full-size database (2^23 instead of 2^12)
 - ⚠️ Real Ethereum mainnet data
 - ⚠️ CDN and BitTorrent distribution
