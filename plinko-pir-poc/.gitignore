@@ -1,0 +1,43 @@
+# Environment
+.env
+
+# Shared data volumes (generated files)
+shared/data/*
+!shared/data/.gitkeep
+shared/logs/*
+!shared/logs/.gitkeep
+
+# Docker
+.docker/
+
+# Node modules (Ambire wallet)
+services/ambire-wallet/node_modules/
+services/ambire-wallet/dist/
+services/piano-pir-server/node_modules/
+
+# Python
+services/db-generator/__pycache__/
+services/db-generator/*.pyc
+
+# Go build artifacts
+services/piano-hint-generator/piano-pir/bin/
+services/plinko-update-service/piano-pir/bin/
+services/piano-pir-server/piano-pir/bin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+# Test outputs
+test-results/
+coverage/

@@ -1,0 +1,176 @@
+# =============================================================================
+# PLINKO PIR + PLINKO POC - SERVICE ORCHESTRATION
+# =============================================================================
+#
+# NETWORK ARCHITECTURE:
+#
+# External Access (from host/browser):
+#   - Plinko PIR Server:    http://localhost:3000
+#   - Plinko Update Service: http://localhost:3001 (health check only)
+#   - CDN Mock:             http://localhost:8080
+#   - Ambire Wallet:        http://localhost:5173
+#   - Anvil:                Not exposed (Docker internal only)
+#
+# Docker Internal Communication (service-to-service):
+#   - Services use Docker network service names:
+#     * eth-mock:8545          (Ethereum RPC)
+#     * plinko-pir-server:3000 (PIR queries)
+#     * cdn-mock:8080          (CDN)
+#     * plinko-pir-updates:3001 (Update service)
+#
+# Custom Domain Setup (Optional):
+#   See .env.example for instructions on configuring custom local domains
+#   (e.g., plinko-server.local, plinko-cdn.local)
+#
+# =============================================================================
+
+services:
+  # Service 1: Ethereum Mock (Anvil)
+  # Address: eth-mock:8545 (Docker internal only)
+  # Purpose: Simulated Ethereum blockchain with 8.4M pre-funded accounts
+  eth-mock:
+    build: ./services/eth-mock
+    container_name: plinko-pir-eth-mock
+    # Expose to host for browser access in public mode
+    ports:
+      - "8545:8545"
+    volumes:
+      - shared-data:/data
+    # Healthcheck disabled - curl not available in container
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8545"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+    networks:
+      - plinko-network
+
+  # Service 2: Database Generator (runs once)
+  # Address: db-generator (Docker internal)
+  # Purpose: Query all accounts from Anvil and create database.bin
+  db-generator:
+    build: ./services/db-generator
+    container_name: plinko-pir-db-generator
+    volumes:
+      - shared-data:/data
+    depends_on:
+      eth-mock:
+        condition: service_started
+    restart: "no"  # Run once only
+    networks:
+      - plinko-network
+
+  # Service 3: Plinko Hint Generator (runs once after db-generator)
+  # Address: plinko-hint-generator (Docker internal)
+  # Purpose: Generate PIR hints from database.bin
+  plinko-hint-generator:
+    build: ./services/plinko-hint-generator
+    container_name: plinko-pir-hint-generator
+    volumes:
+      - shared-data:/data
+    depends_on:
+      db-generator:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - plinko-network
+
+  # Service 4: Plinko Update Service (always running)
+  # External: http://localhost:3001 (health check only)
+  # Internal: plinko-pir-updates:3001
+  # Purpose: Real-time incremental PIR updates
+  plinko-update-service:
+    build: ./services/plinko-update-service
+    container_name: plinko-pir-updates
+    ports:
+      - "3001:3001"
+    volumes:
+      - shared-data:/data
+    depends_on:
+      plinko-hint-generator:
+        condition: service_completed_successfully
+      eth-mock:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "test", "-d", "/data/deltas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - plinko-network
+
+  # Service 5: Plinko PIR Server
+  # External: http://localhost:3000
+  # Internal: plinko-pir-server:3000
+  # Purpose: Private query server (FullSet/PunctSet PIR)
+  plinko-pir-server:
+    build: ./services/plinko-pir-server
+    container_name: plinko-pir-server
+    ports:
+      - "3000:3000"
+    volumes:
+      - shared-data:/data:ro  # Read-only access
+    depends_on:
+      plinko-hint-generator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - plinko-network
+
+  # Service 6: CDN Mock
+  # External: http://localhost:8080
+  # Internal: cdn-mock:8080
+  # Purpose: Serve hint.bin and delta files
+  cdn-mock:
+    build: ./services/cdn-mock
+    container_name: plinko-pir-cdn
+    ports:
+      - "8080:8080"
+    volumes:
+      - shared-data:/data:ro
+    depends_on:
+      plinko-hint-generator:
+        condition: service_completed_successfully
+      plinko-update-service:
+        condition: service_healthy
+    networks:
+      - plinko-network
+
+  # Service 7: Rabby Wallet
+  # External: http://localhost:5173
+  # Internal: rabby-wallet:80
+  # Purpose: User-facing wallet with Privacy Mode
+  rabby-wallet:
+    build: ./services/rabby-wallet
+    container_name: plinko-wallet
+    ports:
+      - "5173:80"  # Nginx serves on port 80, exposed as 5173
+    environment:
+      - VITE_PIR_SERVER_URL=${VITE_PIR_SERVER_URL:-http://localhost:3000}
+      - VITE_CDN_URL=${VITE_CDN_URL:-http://localhost:8080}
+      - VITE_FALLBACK_RPC=${VITE_FALLBACK_RPC:-https://eth.llamarpc.com}
+    depends_on:
+      plinko-pir-server:
+        condition: service_healthy
+      cdn-mock:
+        condition: service_started
+    networks:
+      - plinko-network
+
+# Define explicit network for better service discovery
+networks:
+  plinko-network:
+    driver: bridge
+    name: plinko-pir-network
+
+volumes:
+  shared-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
