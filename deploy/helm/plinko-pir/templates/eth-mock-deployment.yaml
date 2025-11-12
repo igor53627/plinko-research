@@ -21,6 +21,13 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.ethMock.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.ethMock.nodeSelector | nindent 8 }}
+      {{- else if .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
       containers:
       - name: eth-mock
         image: "{{ .Values.ethMock.image.repository }}:{{ .Values.ethMock.image.tag }}"
@@ -41,9 +48,6 @@ spec:
         - name: rpc
           containerPort: 8545
           protocol: TCP
-        volumeMounts:
-        - name: data
-          mountPath: /data
         resources:
           {{- toYaml .Values.ethMock.resources | nindent 10 }}
         {{- if .Values.ethMock.livenessProbe.enabled }}
@@ -54,8 +58,4 @@ spec:
         readinessProbe:
           {{- toYaml .Values.ethMock.readinessProbe | nindent 10 }}
         {{- end }}
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: {{ include "plinko-pir.fullname" . }}-data
 {{- end }}

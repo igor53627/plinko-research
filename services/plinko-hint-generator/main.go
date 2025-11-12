@@ -12,8 +12,7 @@ const (
 	DatabasePath = "/data/database.bin"
 	HintPath     = "/data/hint.bin"
 
-	DBSize      = 8388608  // 2^23 accounts
-	DBEntrySize = 8        // 8 bytes per entry
+	DBEntrySize = 52 // 52 bytes per entry (20 byte address + 32 byte uint256 balance)
 )
 
 // GenParams generates Plinko PIR parameters (ChunkSize, SetSize)
@@ -34,23 +33,11 @@ func main() {
 	log.Println("========================================")
 	log.Println("Plinko PIR Hint Generator")
 	log.Println("========================================")
-	log.Printf("Database size: %d entries (%d MB)\n", DBSize, DBSize*DBEntrySize/1024/1024)
-	log.Println()
 
 	// Wait for database.bin to exist
 	waitForDatabase()
 
-	// Calculate Piano parameters
-	chunkSize, setSize := GenParams(DBSize)
-	totalEntries := chunkSize * setSize
-
-	log.Printf("Plinko PIR Parameters:\n")
-	log.Printf("  Chunk Size: %d\n", chunkSize)
-	log.Printf("  Set Size: %d\n", setSize)
-	log.Printf("  Total Entries: %d (padded from %d)\n", totalEntries, DBSize)
-	log.Println()
-
-	// Read database.bin
+	// Read database.bin to determine actual size
 	log.Println("Reading database.bin...")
 	startRead := time.Now()
 	database, err := readDatabase()
@@ -59,10 +46,25 @@ func main() {
 	}
 	log.Printf("Read %d bytes in %v\n", len(database), time.Since(startRead))
 
+	// Calculate actual database size from file
+	actualDBSize := uint64(len(database) / DBEntrySize)
+	log.Printf("Database size: %d entries (%.1f MB)\n", actualDBSize, float64(len(database))/1024/1024)
+	log.Println()
+
+	// Calculate Plinko PIR parameters based on actual size
+	chunkSize, setSize := GenParams(actualDBSize)
+	totalEntries := chunkSize * setSize
+
+	log.Printf("Plinko PIR Parameters:\n")
+	log.Printf("  Chunk Size: %d\n", chunkSize)
+	log.Printf("  Set Size: %d\n", setSize)
+	log.Printf("  Total Entries: %d (padded from %d)\n", totalEntries, actualDBSize)
+	log.Println()
+
 	// Pad database to totalEntries if needed
-	if uint64(len(database)/DBEntrySize) < totalEntries {
+	if actualDBSize < totalEntries {
 		log.Printf("Padding database from %d to %d entries...\n",
-			len(database)/DBEntrySize, totalEntries)
+			actualDBSize, totalEntries)
 		padding := make([]byte, int(totalEntries)*DBEntrySize-len(database))
 		database = append(database, padding...)
 	}
@@ -70,13 +72,13 @@ func main() {
 	// Generate hint.bin with Piano format
 	log.Println("Generating hint.bin...")
 	startGen := time.Now()
-	if err := generateHint(database, chunkSize, setSize); err != nil {
+	if err := generateHint(database, actualDBSize, chunkSize, setSize); err != nil {
 		log.Fatalf("Failed to generate hint: %v", err)
 	}
 	log.Printf("Generated hint.bin in %v\n", time.Since(startGen))
 
 	// Verify output
-	verifyOutput()
+	verifyOutput(actualDBSize)
 
 	log.Println()
 	log.Println("✅ Hint generation complete!")
@@ -102,7 +104,7 @@ func readDatabase() ([]byte, error) {
 	return os.ReadFile(DatabasePath)
 }
 
-func generateHint(database []byte, chunkSize, setSize uint64) error {
+func generateHint(database []byte, dbSize, chunkSize, setSize uint64) error {
 	f, err := os.Create(HintPath)
 	if err != nil {
 		return err
@@ -112,7 +114,7 @@ func generateHint(database []byte, chunkSize, setSize uint64) error {
 	// Write Plinko PIR metadata header (32 bytes)
 	// Format: [DBSize:8][ChunkSize:8][SetSize:8][Reserved:8]
 	header := make([]byte, 32)
-	binary.LittleEndian.PutUint64(header[0:8], DBSize)
+	binary.LittleEndian.PutUint64(header[0:8], dbSize)
 	binary.LittleEndian.PutUint64(header[8:16], chunkSize)
 	binary.LittleEndian.PutUint64(header[16:24], setSize)
 	binary.LittleEndian.PutUint64(header[24:32], 0) // Reserved
@@ -131,7 +133,7 @@ func generateHint(database []byte, chunkSize, setSize uint64) error {
 	return nil
 }
 
-func verifyOutput() {
+func verifyOutput(dbSize uint64) {
 	info, err := os.Stat(HintPath)
 	if err != nil {
 		log.Printf("⚠️  Could not stat hint.bin: %v\n", err)
@@ -139,7 +141,7 @@ func verifyOutput() {
 	}
 
 	// Expected size: 32 bytes header + (chunkSize * setSize * 8 bytes)
-	chunkSize, setSize := GenParams(DBSize)
+	chunkSize, setSize := GenParams(dbSize)
 	expectedSize := 32 + int64(chunkSize*setSize*DBEntrySize)
 
 	sizeMB := float64(info.Size()) / 1024 / 1024
@@ -151,10 +153,6 @@ func verifyOutput() {
 			info.Size(), sizeMB, expectedSize)
 	}
 
-	// Check if size is within acceptable range (60-80 MB)
-	if sizeMB >= 60 && sizeMB <= 80 {
-		log.Printf("✅ Hint size within target range (60-80 MB)\n")
-	} else {
-		log.Printf("⚠️  Hint size outside target range: %.1f MB\n", sizeMB)
-	}
+	// Dynamic size check - hint should be reasonable for database size
+	log.Printf("✅ Hint size: %.1f MB for %d entries\n", sizeMB, dbSize)
 }

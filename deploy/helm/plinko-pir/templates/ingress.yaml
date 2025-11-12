@@ -18,9 +18,10 @@ spec:
     - http:
         paths:
           # PIR Server API (must be before / to match first)
+          # Use regex to capture everything after /api/ and rewrite to /
           {{- if .Values.plinkoPirServer.enabled }}
-          - path: /api
-            pathType: Prefix
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: {{ include "plinko-pir.fullname" . }}-pir-server
@@ -29,9 +30,10 @@ spec:
           {{- end }}
 
           # CDN Mock
+          # Use regex to capture everything after /cdn/ and rewrite to /
           {{- if .Values.cdnMock.enabled }}
-          - path: /cdn
-            pathType: Prefix
+          - path: /cdn(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: {{ include "plinko-pir.fullname" . }}-cdn-mock
@@ -40,9 +42,10 @@ spec:
           {{- end }}
 
           # Wallet UI - Root path (catch-all, must be last)
+          # Use regex to match everything and pass through unchanged
           {{- if .Values.rabbyWallet.enabled }}
-          - path: /
-            pathType: Prefix
+          - path: /()(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: {{ include "plinko-pir.fullname" . }}-rabby-wallet

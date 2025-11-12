@@ -29,14 +29,14 @@ export const PlinkoPIRProvider = ({ children }) => {
   // Initialize clients once
   if (!pirClientRef.current) {
     pirClientRef.current = new PlinkoPIRClient(
-      import.meta.env.VITE_PIR_SERVER_URL || 'http://localhost:3000',
-      import.meta.env.VITE_CDN_URL || 'http://localhost:8080'
+      import.meta.env.VITE_PIR_SERVER_URL || '/api',
+      import.meta.env.VITE_CDN_URL || '/cdn'
     );
   }
 
   if (!plinkoClientRef.current) {
     plinkoClientRef.current = new PlinkoClient(
-      import.meta.env.VITE_CDN_URL || 'http://localhost:8080'
+      import.meta.env.VITE_CDN_URL || '/cdn'
     );
   }
 
