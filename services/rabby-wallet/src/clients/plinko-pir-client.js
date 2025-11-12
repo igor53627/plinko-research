@@ -12,7 +12,7 @@ export class PlinkoPIRClient {
     this.pirServerUrl = pirServerUrl;
     this.cdnUrl = cdnUrl;
     this.hint = null;
-    this.addressMapping = null;
+    this.addressMapping = null; // Map from address hex -> index
     this.metadata = null;
   }
 
@@ -40,6 +40,49 @@ export class PlinkoPIRClient {
     };
 
     console.log(`Hint downloaded:`, this.metadata);
+
+    // Download address-mapping.bin
+    await this.downloadAddressMapping();
+  }
+
+  /**
+   * Download address-mapping.bin from CDN
+   * This maps Ethereum addresses to database indices
+   */
+  async downloadAddressMapping() {
+    console.log(`Downloading address mapping from ${this.cdnUrl}/address-mapping.bin...`);
+
+    const response = await fetch(`${this.cdnUrl}/address-mapping.bin`);
+    if (!response.ok) {
+      throw new Error(`Failed to download address-mapping.bin: ${response.status}`);
+    }
+
+    const mappingData = await response.arrayBuffer();
+    const view = new DataView(mappingData);
+    
+    // Parse address-mapping.bin
+    // Format: [20 bytes address][4 bytes index (little-endian)] repeated
+    this.addressMapping = new Map();
+    
+    const entrySize = 24; // 20 bytes address + 4 bytes index
+    const numEntries = mappingData.byteLength / entrySize;
+    
+    for (let i = 0; i < numEntries; i++) {
+      const offset = i * entrySize;
+      
+      // Read 20-byte address
+      const addressBytes = new Uint8Array(mappingData, offset, 20);
+      const addressHex = '0x' + Array.from(addressBytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      
+      // Read 4-byte index (little-endian)
+      const index = view.getUint32(offset + 20, true);
+      
+      this.addressMapping.set(addressHex.toLowerCase(), index);
+    }
+    
+    console.log(`Address mapping loaded: ${this.addressMapping.size} entries`);
   }
 
   /**
@@ -126,24 +169,21 @@ export class PlinkoPIRClient {
   /**
    * Map Ethereum address to database index
    *
-   * PoC Implementation:
-   * - Simple hash-based mapping for demonstration
-   * - Production would load address-mapping.bin
+   * Uses address-mapping.bin for accurate lookups
    *
    * @param {string} address - Ethereum address (0x...)
    * @returns {number} - Database index
    */
   addressToIndex(address) {
-    // Remove 0x prefix
-    const addrHex = address.toLowerCase().replace('0x', '');
-
-    // Simple hash: sum of bytes mod dbSize
-    let hash = 0;
-    for (let i = 0; i < addrHex.length; i += 2) {
-      hash += parseInt(addrHex.substr(i, 2), 16);
+    const normalizedAddress = address.toLowerCase();
+    
+    // Look up address in mapping
+    if (this.addressMapping && this.addressMapping.has(normalizedAddress)) {
+      return this.addressMapping.get(normalizedAddress);
     }
-
-    return hash % (this.metadata?.dbSize || 8388608);
+    
+    // Address not found in database
+    throw new Error(`Address ${address} not found in database. Only addresses in range 0x1000...0000 to 0x1000...${(this.metadata?.dbSize - 1 || 0).toString(16)} are indexed.`);
   }
 
   /**

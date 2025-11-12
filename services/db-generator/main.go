@@ -20,9 +20,9 @@ const (
 	DatabasePath     = "/data/database.bin"
 	AddressMappingPath = "/data/address-mapping.bin"
 
-	// Performance tuning
-	ConcurrentWorkers = 10000  // High concurrency for fast queries
-	BatchSize         = 1000   // Progress reporting interval
+	// Performance tuning defaults
+	DefaultConcurrentWorkers = 10000 // High concurrency for fast queries
+	BatchSize                = 1000  // Progress reporting interval
 
 	// Anvil default mnemonic (well-known test mnemonic)
 	AnvilMnemonic = "test test test test test test test test test test test junk"
@@ -46,6 +46,16 @@ func getRPCURL() string {
 	return "http://eth-mock:8545" // Default for docker-compose
 }
 
+// Get concurrent workers from environment or use default
+func getConcurrentWorkers() int {
+	if workers := os.Getenv("CONCURRENT_WORKERS"); workers != "" {
+		if w, err := strconv.Atoi(workers); err == nil && w > 0 {
+			return w
+		}
+	}
+	return DefaultConcurrentWorkers
+}
+
 type AccountData struct {
 	Address common.Address
 	Balance *big.Int
@@ -54,13 +64,14 @@ type AccountData struct {
 func main() {
 	totalAccounts := getTotalAccounts()
 	rpcURL := getRPCURL()
+	concurrentWorkers := getConcurrentWorkers()
 
 	log.Println("========================================")
 	log.Println("Plinko PIR Database Generator (Go)")
 	log.Println("========================================")
 	log.Printf("Accounts: %d\n", totalAccounts)
 	log.Printf("RPC URL: %s\n", rpcURL)
-	log.Printf("Concurrent workers: %d\n", ConcurrentWorkers)
+	log.Printf("Concurrent workers: %d\n", concurrentWorkers)
 	log.Println()
 
 	// Check if database already exists
@@ -91,7 +102,7 @@ func main() {
 	// Query balances concurrently
 	log.Println("Querying account balances...")
 	startQuery := time.Now()
-	accounts := queryBalancesConcurrent(client, addresses)
+	accounts := queryBalancesConcurrent(client, addresses, concurrentWorkers)
 	log.Printf("Queried %d balances in %v\n", len(accounts), time.Since(startQuery))
 
 	// Sort accounts by address (deterministic ordering)
@@ -162,7 +173,7 @@ func generateAnvilAddresses(count int) []common.Address {
 }
 
 // queryBalancesConcurrent queries account balances with high concurrency
-func queryBalancesConcurrent(client *ethclient.Client, addresses []common.Address) []AccountData {
+func queryBalancesConcurrent(client *ethclient.Client, addresses []common.Address, workers int) []AccountData {
 	accounts := make([]AccountData, len(addresses))
 
 	// Worker pool
@@ -174,7 +185,7 @@ func queryBalancesConcurrent(client *ethclient.Client, addresses []common.Addres
 	var mu sync.Mutex
 
 	// Start workers
-	for w := 0; w < ConcurrentWorkers; w++ {
+	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -225,10 +236,24 @@ func writeDatabaseBin(accounts []AccountData) error {
 	}
 	defer f.Close()
 
-	// Write 8 bytes per account (uint64 balance in wei, truncated)
-	for _, acc := range accounts {
-		// Convert big.Int balance to uint64 (sufficient for PoC)
-		balance := acc.Balance.Uint64()
+	maxUint64 := new(big.Int).SetUint64(^uint64(0))
+	clampedCount := 0
+
+	// Write 8 bytes per account (uint64 balance in wei, clamped to max)
+	for i, acc := range accounts {
+		var balance uint64
+
+		// Check for overflow and clamp to uint64 max
+		if acc.Balance.Cmp(maxUint64) > 0 {
+			balance = ^uint64(0) // Max uint64
+			clampedCount++
+			if clampedCount <= 5 { // Log first 5 overflows
+				log.Printf("⚠️  Warning: Balance at index %d exceeds uint64 max, clamping to %d wei",
+					i, balance)
+			}
+		} else {
+			balance = acc.Balance.Uint64()
+		}
 
 		// Write as little-endian uint64
 		var buf [8]byte
@@ -236,6 +261,10 @@ func writeDatabaseBin(accounts []AccountData) error {
 		if _, err := f.Write(buf[:]); err != nil {
 			return err
 		}
+	}
+
+	if clampedCount > 0 {
+		log.Printf("⚠️  Total clamped balances: %d out of %d accounts", clampedCount, len(accounts))
 	}
 
 	return nil

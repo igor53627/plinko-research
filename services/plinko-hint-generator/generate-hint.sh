@@ -12,15 +12,17 @@ while [ ! -f /data/database.bin ]; do
     sleep 2
 done
 
-# Check database.bin size
+# Check database.bin size (dynamic - no hardcoded expectations)
 DB_SIZE=$(stat -c%s /data/database.bin 2>/dev/null || stat -f%z /data/database.bin 2>/dev/null)
-EXPECTED_SIZE=67108864  # 8,388,608 × 8 bytes
+DB_SIZE_MB=$((DB_SIZE / 1024 / 1024))
+DB_ENTRIES=$((DB_SIZE / 52))
 
 echo "✅ database.bin found"
-echo "  Size: $DB_SIZE bytes (expected: $EXPECTED_SIZE)"
+echo "  Size: $DB_SIZE bytes ($DB_SIZE_MB MB)"
+echo "  Entries: $DB_ENTRIES"
 echo ""
 
-# Run hint generator
+# Run hint generator (will auto-detect size from file)
 echo "Starting hint generation..."
 /app/hint-generator
 

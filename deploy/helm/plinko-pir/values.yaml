@@ -19,6 +19,12 @@ global:
     # Certificate manager issuer (e.g., letsencrypt-prod)
     issuer: ""
 
+  # Node selector for pods that need shared RWO volume
+  # Since Vultr Block Storage only supports RWO, all pods accessing
+  # the shared volume must run on the same node
+  nodeSelector:
+    kubernetes.io/hostname: ""  # Set to specific node name (e.g., pir-7355993b0422)
+
 # =============================================================================
 # PERSISTENT STORAGE
 # =============================================================================
@@ -26,8 +32,8 @@ global:
 persistence:
   enabled: true
   storageClass: "vultr-block-storage"
-  accessMode: ReadWriteMany
-  size: 15Gi
+  accessMode: ReadWriteOnce  # Vultr only supports RWO, use nodeSelector for pod affinity
+  size: 20Gi
   # Annotations for Vultr Block Storage
   annotations:
     volume.beta.kubernetes.io/storage-class: "vultr-block-storage"
@@ -52,7 +58,7 @@ ethMock:
   # Anvil configuration
   config:
     accounts: 8388608  # 2^23 accounts (Ethereum Warm Tier)
-    balance: "1000000000000000000000"  # 1000 ETH in wei
+    balance: "10000000000000000000"  # 10 ETH in wei (reduced to fit in u64)
     blockTime: 12  # 12-second blocks (mainnet simulation)
 
   resources:
@@ -77,7 +83,7 @@ dbGenerator:
   enabled: true
 
   image:
-    repository: plinko-pir/db-generator
+    repository: ghcr.io/igor53627/plinko-db-generator
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -109,7 +115,7 @@ plinkoHintGenerator:
   enabled: true
 
   image:
-    repository: plinko-pir/hint-generator
+    repository: ghcr.io/igor53627/plinko-hint-generator
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -140,7 +146,7 @@ plinkoUpdateService:
   replicaCount: 1
 
   image:
-    repository: plinko-pir/update-service
+    repository: ghcr.io/igor53627/plinko-update-service
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -196,7 +202,7 @@ plinkoPirServer:
   replicaCount: 2  # Multiple instances for high availability
 
   image:
-    repository: plinko-pir/pir-server
+    repository: ghcr.io/igor53627/plinko-pir-server
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -310,7 +316,7 @@ rabbyWallet:
   replicaCount: 2
 
   image:
-    repository: plinko-pir/rabby-wallet
+    repository: ghcr.io/igor53627/plinko-rabby-wallet
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -371,7 +377,8 @@ ingress:
     service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-protocol: "http"
     service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-path: "/health"
     # Nginx ingress annotations
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Use $2 to capture the path after /api or /cdn
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     # CORS for CDN
     nginx.ingress.kubernetes.io/enable-cors: "true"

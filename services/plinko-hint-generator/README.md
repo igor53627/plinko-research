@@ -1,24 +1,34 @@
-# Piano Hint Generator Service (Go)
+# Plinko PIR Hint Generator (Go)
 
 **Purpose**: Generate Plinko PIR hints from database for client downloads
 
+## Features
+
+- **Auto-detects database size** from input file (no hardcoded values)
+- Calculates optimal Plinko PIR parameters dynamically
+- Pads database to required size preserving address mappings
+- Generates hint.bin with correct metadata header
+
 ## Configuration
 
-- **Input**: `/data/database.bin` (64 MB, from db-generator)
-- **Output**: `/data/hint.bin` (~67 MB with metadata)
-- **Piano Parameters**:
-  - DBSize: 8,388,608 entries
-  - ChunkSize: 8,192 (calculated: 2√n, rounded to power of 2)
-  - SetSize: 1,024 (calculated: ⌈n/chunk⌉, rounded to multiple of 4)
+- **Input**: `/data/database.bin` (any size, multiple of 8 bytes)
+- **Output**: `/data/hint.bin` (size depends on database)
+- **Plinko PIR Parameters**: Calculated automatically
+  - ChunkSize: 2√n, rounded to power of 2
+  - SetSize: ⌈n/chunk⌉, rounded to multiple of 4
+  - Example (10K entries): chunk=256, set=40, total=10,240
 
 ## Performance
 
-**Expected runtime**: <5 seconds
-- Database read: ~1 second
-- Hint generation: ~2 seconds
-- File write: ~1 second
+| Database Size | Chunk Size | Hint Size | Generation Time |
+|--------------|------------|-----------|-----------------|
+| 1K entries   | 64         | ~8 KB     | < 1ms           |
+| 10K entries  | 256        | ~80 KB    | < 1ms           |
+| 100K entries | 1,024      | ~800 KB   | ~10ms           |
+| 1M entries   | 2,048      | ~7.6 MB   | ~100ms          |
+| 8M entries   | 8,192      | ~64 MB    | ~500ms          |
 
-**Memory**: ~130 MB (database + hint in memory briefly)
+**Memory**: Scales with database size (database + hint in memory briefly)
 
 ## Output Format
 
@@ -26,22 +36,24 @@
 
 **Header (32 bytes)**:
 ```
-[0:8]   DBSize (uint64)      = 8,388,608
-[8:16]  ChunkSize (uint64)   = 8,192
-[16:24] SetSize (uint64)     = 1,024
+[0:8]   DBSize (uint64)      = actual entry count (e.g., 10,000)
+[8:16]  ChunkSize (uint64)   = calculated (e.g., 256)
+[16:24] SetSize (uint64)     = calculated (e.g., 40)
 [24:32] Reserved (uint64)    = 0
 ```
 
-**Body (67,108,864 bytes)**:
+**Body (variable size)**:
 ```
-Piano-formatted database in chunks:
-  Chunk 0: entries [0:8,192)
-  Chunk 1: entries [8,192:16,384)
+Plinko PIR formatted database in chunks:
+  Chunk 0: entries [0:chunkSize)
+  Chunk 1: entries [chunkSize:2*chunkSize)
   ...
-  Chunk 1,023: entries [8,380,416:8,388,608)
+  Chunk (setSize-1): entries [...]
+
+Padded with zeros to: chunkSize × setSize entries
 ```
 
-**Total Size**: 32 + 67,108,864 = 67,108,896 bytes (~64 MB)
+**Total Size**: 32 + (chunkSize × setSize × 8) bytes
 
 ## Usage
 
