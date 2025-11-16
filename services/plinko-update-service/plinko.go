@@ -28,12 +28,13 @@ type PlinkoUpdateManager struct {
 	iprf         *IPRF    // Invertible PRF for mapping indices to hint sets
 	chunkSize    uint64
 	setSize      uint64
+	dbSize       uint64
 	indexToHint  []uint64 // Pre-computed mapping: indexToHint[i] = hint set for database index i
 	useCacheMode bool     // If true, use pre-computed cache instead of iPRF calls
 }
 
 // NewPlinkoUpdateManager creates a new update manager
-func NewPlinkoUpdateManager(database []uint64, chunkSize, setSize uint64) *PlinkoUpdateManager {
+func NewPlinkoUpdateManager(database []uint64, dbSize, chunkSize, setSize uint64) *PlinkoUpdateManager {
 	// Create iPRF for mapping database indices to hint sets
 	// Domain: n = DBSize (number of database entries)
 	// Range: m = SetSize (number of chunks/hint sets)
@@ -44,13 +45,14 @@ func NewPlinkoUpdateManager(database []uint64, chunkSize, setSize uint64) *Plink
 		key[i] = byte(i)
 	}
 
-	iprf := NewIPRF(key, DBSize, setSize)
+	iprf := NewIPRF(key, dbSize, setSize)
 
 	return &PlinkoUpdateManager{
 		database:     database,
 		iprf:         iprf,
 		chunkSize:    chunkSize,
 		setSize:      setSize,
+		dbSize:       dbSize,
 		indexToHint:  nil,
 		useCacheMode: false,
 	}
@@ -65,10 +67,10 @@ func (pm *PlinkoUpdateManager) EnableCacheMode() time.Duration {
 	startTime := time.Now()
 
 	// Allocate cache array
-	pm.indexToHint = make([]uint64, DBSize)
+	pm.indexToHint = make([]uint64, pm.dbSize)
 
 	// Pre-compute hint mapping for all database indices
-	for i := uint64(0); i < DBSize; i++ {
+	for i := uint64(0); i < pm.dbSize; i++ {
 		pm.indexToHint[i] = pm.iprf.Forward(i)
 
 		// Progress indicator (every 1M entries)
@@ -84,12 +86,12 @@ func (pm *PlinkoUpdateManager) EnableCacheMode() time.Duration {
 // ApplyUpdates processes a batch of database updates and generates hint deltas
 //
 // Algorithm:
-// 1. For each updated database entry:
-//    a. Use iPRF to find which hint sets are affected
-//    b. Compute XOR delta: delta = old_value ⊕ new_value
-//    c. Generate HintDelta for each affected hint set
-// 2. Apply database updates
-// 3. Return hint deltas for client
+//  1. For each updated database entry:
+//     a. Use iPRF to find which hint sets are affected
+//     b. Compute XOR delta: delta = old_value ⊕ new_value
+//     c. Generate HintDelta for each affected hint set
+//  2. Apply database updates
+//  3. Return hint deltas for client
 //
 // Complexity: O(|updates|) with O(1) per update (Plinko's guarantee)
 func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, time.Duration) {
@@ -103,13 +105,10 @@ func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, ti
 
 		// Step 2: Find affected hint set
 		// Use pre-computed cache if available, otherwise compute via iPRF
-		var hintSetID uint64
-		if pm.useCacheMode {
+		hintSetID := pm.iprf.Forward(update.Index)
+		if pm.useCacheMode && update.Index < uint64(len(pm.indexToHint)) {
 			// O(1) lookup from pre-computed cache
 			hintSetID = pm.indexToHint[update.Index]
-		} else {
-			// O(log m) iPRF computation (original path)
-			hintSetID = pm.iprf.Forward(update.Index)
 		}
 
 		// Step 3: Compute XOR delta
