@@ -176,8 +176,24 @@ func (eiprf *EnhancedIPRF) GetPreimageSize() uint64 {
 }
 
 // InverseFixed provides access to the fixed inverse implementation
+// This applies the same transformation as Inverse but uses the fixed implementation
 func (eiprf *EnhancedIPRF) InverseFixed(y uint64) []uint64 {
-	return eiprf.base.InverseFixed(y)
+	// Step 1: Find all preimages in the base iPRF (permuted space) using fixed implementation
+	permutedPreimages := eiprf.base.InverseFixed(y)
+	
+	// Step 2: Apply inverse PRP to each preimage to get back to original space
+	preimages := make([]uint64, 0, len(permutedPreimages))
+	for _, permutedX := range permutedPreimages {
+		originalX := eiprf.prp.InversePermute(permutedX, eiprf.base.domain)
+		preimages = append(preimages, originalX)
+	}
+	
+	// Sort for deterministic output
+	sort.Slice(preimages, func(i, j int) bool {
+		return preimages[i] < preimages[j]
+	})
+	
+	return preimages
 }
 
 // DebugInverse provides debugging for the enhanced iPRF
