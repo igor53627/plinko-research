@@ -1,8 +1,23 @@
 # README Update: iPRF Inverse Function Implementation
 
-## 🎯 **New: iPRF Inverse Function - Core Innovation from Plinko Paper**
+## UPDATE: Python Reference Implementation Now Available
 
-We have successfully implemented the **iPRF (invertible Pseudorandom Function) inverse function** - the core technical innovation from the [Plinko paper](https://eprint.iacr.org/2024/318.pdf) that enables unprecedented efficiency in Private Information Retrieval.
+The Python reference implementation (`plinko-reference/`) now includes complete iPRF with all bug fixes.
+
+**Quick Start**:
+```bash
+cd plinko-reference
+python3 test_iprf_simple.py  # Run tests
+python3 test_go_python_comparison.py  # Validate
+```
+
+See `plinko-reference/IPRF_IMPLEMENTATION.md` for details.
+
+---
+
+## 🎯 **iPRF Inverse Function - Core Innovation from Plinko Paper**
+
+We have successfully implemented the **iPRF (invertible Pseudorandom Function) inverse function** in both Go and Python - the core technical innovation from the [Plinko paper](https://eprint.iacr.org/2024/318.pdf).
 
 ## 💡 **The Breakthrough**
 
@@ -14,11 +29,17 @@ We have successfully implemented the **iPRF (invertible Pseudorandom Function) i
 
 ## 🚀 **Implementation Details**
 
-### Core Files Added:
-- **`services/state-syncer/iprf_inverse.go`** - iPRF inverse function implementation
-- **`services/state-syncer/iprf_prp.go`** - Enhanced iPRF with PRP + PMNS construction
+### Go Implementation (Production)
+- **`services/state-syncer/iprf_inverse.go`** - iPRF inverse function
+- **`services/state-syncer/iprf_prp.go`** - Enhanced iPRF with PRP + PMNS
+- **`services/state-syncer/table_prp.go`** - O(1) PRP operations
 - **`services/state-syncer/iprf_test.go`** - Comprehensive test suite
-- **`services/state-syncer/plinko.go`** - Integration with update service
+
+### Python Reference Implementation (NEW)
+- **`plinko-reference/iprf.py`** - Complete iPRF with all bug fixes
+- **`plinko-reference/table_prp.py`** - TablePRP with Fisher-Yates
+- **`plinko-reference/test_iprf_simple.py`** - Test suite (10/10 passing)
+- **`plinko-reference/IPRF_IMPLEMENTATION.md`** - Complete guide
 
 ### Key Function:
 ```go
