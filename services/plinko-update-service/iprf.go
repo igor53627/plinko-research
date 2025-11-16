@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/binary"
 	"math"
 )
 
@@ -11,17 +14,25 @@ type PrfKey128 [16]byte
 
 type IPRF struct {
 	key       PrfKey128 // PRF key for tree sampling
-	domain    uint64    // n: domain size (DBSize)
-	range_    uint64    // m: range size (SetSize)
-	treeDepth int       // ceiling(log2(m))
+	block     cipher.Block
+	domain    uint64 // n: domain size (DBSize)
+	range_    uint64 // m: range size (SetSize)
+	treeDepth int    // ceiling(log2(m))
 }
+
+const invTwoTo53 = 1.0 / (1 << 53)
 
 // NewIPRF creates a new invertible PRF from domain [n] to range [m]
 func NewIPRF(key PrfKey128, n uint64, m uint64) *IPRF {
 	treeDepth := int(math.Ceil(math.Log2(float64(m))))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		panic(err)
+	}
 
 	return &IPRF{
 		key:       key,
+		block:     block,
 		domain:    n,
 		range_:    m,
 		treeDepth: treeDepth,
@@ -61,7 +72,13 @@ func (iprf *IPRF) traceBall(xPrime uint64, n uint64, m uint64) uint64 {
 
 		// Sample binomial to determine split point
 		nodeID := encodeNode(low, high, n)
-		leftCount := iprf.sampleBinomial(nodeID, ballCount, p)
+		prfOutput := iprf.prfEval(nodeID)
+
+		// Map to (0, 1)
+		uniform := (float64(prfOutput>>11) + 0.5) * invTwoTo53
+
+		// Use inverse CDF
+		leftCount := iprf.binomialInverseCDF(n, p, uniform)
 
 		// Determine if ball xPrime goes left or right
 		if ballIndex < leftCount {
@@ -82,10 +99,10 @@ func (iprf *IPRF) traceBall(xPrime uint64, n uint64, m uint64) uint64 {
 // sampleBinomial samples from Binomial(n, p) using PRF
 func (iprf *IPRF) sampleBinomial(nodeID uint64, n uint64, p float64) uint64 {
 	// Use PRF to generate deterministic random value
-	prfOutput := prfEval(&iprf.key, nodeID)
+	prfOutput := iprf.prfEval(nodeID)
 
 	// Map to (0, 1)
-	uniform := (float64(prfOutput) + 1.0) / (float64(uint64(1)<<32) + 2.0)
+	uniform := (float64(prfOutput>>11) + 0.5) * invTwoTo53
 
 	// Use inverse CDF
 	return iprf.binomialInverseCDF(n, p, uniform)
@@ -217,22 +234,13 @@ func invNormalCDF(p float64) float64 {
 	return -2.0
 }
 
-// prfEval is a simple PRF for demonstration
-func prfEval(key *PrfKey128, x uint64) uint64 {
-	// Simple PRF using FNV-1a hash
-	hash := uint64(2166136261)
+// prfEval evaluates AES-128(key, x) and returns the upper 64 bits
+func (iprf *IPRF) prfEval(x uint64) uint64 {
+	var input [aes.BlockSize]byte
+	binary.BigEndian.PutUint64(input[aes.BlockSize-8:], x)
 
-	// Mix in key
-	for i := 0; i < 16; i++ {
-		hash ^= uint64(key[i])
-		hash *= 16777619
-	}
+	var output [aes.BlockSize]byte
+	iprf.block.Encrypt(output[:], input[:])
 
-	// Mix in x
-	for i := 0; i < 8; i++ {
-		hash ^= (x >> (i * 8)) & 0xFF
-		hash *= 16777619
-	}
-
-	return hash & 0xFFFFFFFF // Return 32-bit value
+	return binary.BigEndian.Uint64(output[:8])
 }
