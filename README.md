@@ -7,11 +7,10 @@
 Plinko is a single-server Private Information Retrieval (PIR) protocol with efficient updates. This implementation provides a production-ready system for private blockchain state queries.
 
 **Key Features:**
-- 🔒 **Privacy-Preserving**: Query blockchain state without revealing query contents
-- ⚡ **High Performance**: O(log m + k) query complexity with iPRF inverse
-- 🔄 **Efficient Updates**: Incremental state updates without full reconstruction
-- 🎯 **Production-Ready**: Comprehensive test coverage, deployment guides
-- 🐍 **Multi-Language**: Go (production) and Python (reference) implementations
+- **Privacy-Preserving**: Query blockchain state without revealing query contents
+- **High Performance**: O(log m + k) query complexity with iPRF inverse (m = range size, k = result set size)
+- **Efficient Updates**: Incremental state updates without full reconstruction
+- **Multi-Language**: Go (production) and Python (reference) implementations
 
 ## Quick Start
 
@@ -110,13 +109,11 @@ python3 test_iprf_simple.py
 | Research Area | Finding | Status |
 |---------------|---------|--------|
 | **eth_getBalance** | ✅ **VIABLE** - 5.6M recent addresses, ~5 ms queries | PoC Implemented |
-| **eth_call** | ❌ **NOT VIABLE** - Storage explosion (10B+ slots) | [Analysis](research/findings/phase-4-eth-call-analysis.md) |
-| **eth_getLogs (Full)** | ❌ **NOT VIABLE** - 500B logs, 150 TB database | [Analysis](research/findings/phase-5-eth-logs-analysis.md) |
-| **eth_getLogs (Per-User)** | ✅ **HIGHLY VIABLE** - 30K logs/user, 7.7 MB database | [Analysis](research/findings/phase-5-eth-logs-analysis.md) |
-| **eth_getLogs (50K Blocks)** | ✅ **FEASIBLE** - 200M logs, 6.4-51 GB (with compression) | [Analysis](research/findings/eth-logs-50k-blocks.md) |
-| **Fixed-Size Compression** | ✅ **VIABLE** - 4 approaches analyzed, 8-62× reduction | [Analysis](research/findings/fixed-size-log-compression.md) |
-
-**External Summary**: [Plinko PIR Analysis](https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7)
+| **eth_call** | ❌ **NOT VIABLE** - Storage explosion (10B+ slots) | [Analysis](research/findings/phase7-summary.md) |
+| **eth_getLogs (Full)** | ❌ **NOT VIABLE** - 500B logs, 150 TB database | [Analysis](research/findings/phase7-summary.md) |
+| **eth_getLogs (Per-User)** | ✅ **HIGHLY VIABLE** - 30K logs/user, 7.7 MB database | [Analysis](research/findings/phase7-summary.md) |
+| **eth_getLogs (50K Blocks)** | ✅ **FEASIBLE** - 200M logs, 6.4-51 GB (with compression) | [Analysis](research/archive/fixed-size-log-compression.md) |
+| **Fixed-Size Compression** | ✅ **VIABLE** - 4 approaches analyzed, 8-62× reduction | [Analysis](research/archive/fixed-size-log-compression.md) |
 
 ### Balance Queries (eth_getBalance)
 
@@ -130,6 +127,8 @@ Configuration:
   - Query latency: ~5ms
   - Update latency: 23.75ms per 2,000 accounts (Plinko cache mode)
 ```
+
+> **Note**: The PoC/development environment (see IMPLEMENTATION.md) uses 8.4M simulated accounts via Anvil for scalability testing, while production deployment uses 5.6M real mainnet addresses.
 
 **Use Cases:**
 - Privacy-focused wallets (MetaMask alternative)
