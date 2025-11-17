@@ -82,9 +82,11 @@ services/state-syncer/state-syncer
 services/plinko-pir-server/pir-server
 *.exe
 
-# Backup directories
+# Development tools (IDE-specific, not for production repo)
+.claude/
 .claude-backups/
-.claude-collective/metrics/
+.claude-collective/
+.taskmaster/
 
 # QA test output (temporary)
 **/qa_test_results.txt
