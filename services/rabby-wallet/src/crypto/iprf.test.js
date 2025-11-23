@@ -1,16 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { IPRF } from './iprf.js';
-
-const hexToUint8Array = (hex) => {
-  if (hex.length % 2 !== 0) {
-    throw new Error('Hex string must have even length');
-  }
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-};
+import { hexToUint8Array } from './__test-utils__.js';
 
 describe('IPRF Invertibility', () => {
   it('should correctly invert forward evaluations', () => {

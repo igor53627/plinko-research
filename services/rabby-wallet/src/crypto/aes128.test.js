@@ -1,17 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Aes128 } from './aes128.js';
 import prfVectors from '../testdata/prf_vectors.json';
-
-const hexToUint8Array = (hex) => {
-  if (hex.length % 2 !== 0) {
-    throw new Error('Hex string must have even length');
-  }
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-};
+import { hexToUint8Array } from './__test-utils__.js';
 
 const formatHex = (value) => value.toString(16).padStart(16, '0');
 

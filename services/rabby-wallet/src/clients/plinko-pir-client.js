@@ -450,18 +450,25 @@ export class PlinkoPIRClient {
     const targetIndex = this.addressToIndex(address);
     const { chunkSize, setSize } = this.metadata;
 
-    // Generate random PRF key (16 bytes)
+    // Generate random PRF key (32 bytes for full IPRF security)
     const cryptoSource = browserCrypto;
     if (!cryptoSource?.getRandomValues) {
       throw new Error('Secure random generator unavailable in this environment');
     }
-    const prfKey = cryptoSource.getRandomValues(new Uint8Array(16));
+    const prfKey = cryptoSource.getRandomValues(new Uint8Array(32));
 
-    // Expand set LOCALLY using iPRF
+    // 1. Expand set LOCALLY using iPRF
     const prfSet = this.expandPRFSet(prfKey, setSize, chunkSize);
 
+    // 2. Calculate target chunk
+    const targetChunk = Math.floor(targetIndex / chunkSize);
+    
+    // 3. Puncture the set: Replace the random index at targetChunk with our actual targetIndex
+    // This ensures the query set S contains our target index i.
+    const originalIndexAtChunk = prfSet[targetChunk];
+    prfSet[targetChunk] = targetIndex;
+
     // Prepare request: Send explicit indices to server
-    // This decouples client generation logic (iPRF) from server logic (dumb XOR).
     const url = `${this.pirServerUrl}/query/setparity`;
     const headers = { 'Content-Type': 'application/json' };
     const requestBody = { indices: prfSet };
@@ -477,12 +484,13 @@ export class PlinkoPIRClient {
     console.log(`  Headers:`, headers);
     console.log(`  Body (JSON):`);
     console.log(`    indices: [${requestBody.indices.slice(0, 5).join(', ')}...] (${requestBody.indices.length} indices)`);
+    console.log(`  Punctured Index at chunk ${targetChunk}: Replaced ${originalIndexAtChunk} with ${targetIndex}`);
     console.log(`  Full Body String Length: ${bodyString.length} chars`);
     console.log('');
     console.log('What server sees:');
-    console.log('  ✅ List of random indices');
-    console.log('  ❌ NOT the PRF key (Server cannot derive other sets)');
-    console.log('  ❌ NOT the address being queried');
+    console.log('  ✅ List of random indices (indistinguishable from random)');
+    console.log('  ❌ NOT the PRF key');
+    console.log('  ❌ NOT explicitly which index is the target (it looks like any other index)');
     console.log('========================================');
 
     // Send SetParity query to server
@@ -497,42 +505,44 @@ export class PlinkoPIRClient {
     }
 
     const data = await response.json();
-    // The server response format for setparity is { parity: "value" }
-    // Check server.go: SetParityQueryResponse struct has Parity field.
-    // Wait, let's check server.go to be sure about JSON field name.
-    // type SetParityQueryResponse struct { Parity string ... } -> "parity"
-    // FullSetQueryResponse has "value"
     
-    // server.go:
-    // type SetParityQueryResponse struct { Parity string ... }
+    if (!data.parity) {
+        throw new Error("Server response missing 'parity' field");
+    }
     
-    const serverParity = BigInt(data.parity || data.value); 
-    // (Just in case I misremembered, assume parity is the field but fallback if consistent with others)
+    const serverParity = BigInt(data.parity);
 
     // === PRODUCTION PLINKO PIR DECODING ===
-
-    // Step 1: (Already done) prfSet is our set S
-
-    // Step 2: Compute target chunk
-    const targetChunk = Math.floor(targetIndex / chunkSize);
+    // We sent set S' = {r_0, ..., r_{c-1}, targetIndex, r_{c+1}, ..., r_{k-1}}
+    // Server returned P_server = DB[targetIndex] ⊕ ⊕_{j ≠ c} DB[r_j]
+    // We want DB[targetIndex].
+    // We can compute P_remainder = ⊕_{j ≠ c} Hint[r_j] using our local hint.
+    // Then DB[targetIndex] ≈ P_server ⊕ P_remainder.
+    // (Assuming Hint ≈ DB for the random indices, which is true if updates are sparse or handled separately)
 
     // Step 3: Read database entries from hint for decoding
     const hintData = this.hint;
     const dbStart = 32; // Skip header
 
-    // Step 4: Compute XOR of all PRF-selected entries FROM HINT
-    let hintParity = 0n;
-    for (const idx of prfSet) {
-      const value = this.readDBEntry(hintData, dbStart, idx);
-      hintParity ^= value;
+    // Step 4: Compute parity of the REMAINDER of the set (everything EXCEPT the target chunk)
+    let remainderParity = 0n;
+    for (let i = 0; i < prfSet.length; i++) {
+        if (i === targetChunk) continue; // Skip our target index
+        const idx = prfSet[i];
+        const value = this.readDBEntry(hintData, dbStart, idx);
+        remainderParity ^= value;
     }
 
-    // Step 5: Compute delta between server and hint
-    const delta = serverParity ^ hintParity;
-
-    // Step 6: Extract target balance
+    // Step 5: Recover target value
+    // P_server = TargetValue ⊕ RemainderParity (roughly)
+    // TargetValue = P_server ⊕ RemainderParity
+    const recoveredValue = serverParity ^ remainderParity;
+    
+    // Check against local hint for debugging (delta)
     const hintValue = this.readDBEntry(hintData, dbStart, targetIndex);
-    const targetBalance = hintValue; // + apply delta if needed
+    const delta = recoveredValue ^ hintValue;
+
+    const targetBalance = recoveredValue;
     const saturated = targetBalance === UINT256_MAX;
 
     if (saturated) {
@@ -540,10 +550,11 @@ export class PlinkoPIRClient {
     }
 
     console.log(`✅ Decoded balance: ${targetBalance} wei`);
-    console.log(`   Server parity: ${serverParity}, Hint parity: ${hintParity}, Delta: ${delta}`);
+    console.log(`   Server parity: ${serverParity}, Remainder parity: ${remainderParity}`);
+    console.log(`   Recovered: ${recoveredValue}, Local Hint: ${hintValue}, Delta: ${delta}`);
 
     if (delta !== 0n) {
-      console.warn(`⚠️ Delta is non-zero (${delta}), hint may be stale. Using hint value anyway for PoC.`);
+      console.log(`ℹ️  Delta non-zero: Database has been updated since hint generation.`);
     }
 
     // Return balance with visualization data
@@ -556,7 +567,7 @@ export class PlinkoPIRClient {
         prfSetSize: prfSet.length,
         prfSetSample: prfSet.slice(0, 5),
         serverParity: serverParity.toString(),
-        hintParity: hintParity.toString(),
+        hintParity: remainderParity.toString(), // conceptual mapping for UI
         delta: delta.toString(),
         hintValue: hintValue.toString(),
         dbSize: this.metadata?.dbSize || chunkSize * setSize,
@@ -570,23 +581,19 @@ export class PlinkoPIRClient {
 
   /**
    * Expand PRF key to pseudorandom set using client-side iPRF
-   * @param {Uint8Array} prfKey - 16-byte PRF key
+   * @param {Uint8Array} prfKey - 32-byte PRF key
    * @param {number} setSize - Number of chunks
    * @param {number} chunkSize - Size of each chunk
    * @returns {number[]} - Array of database indices
    */
   expandPRFSet(prfKey, setSize, chunkSize) {
     const keyBytes = prfKey instanceof Uint8Array ? prfKey : Uint8Array.from(prfKey);
-    if (keyBytes.length !== 16) {
-      throw new Error("PRF key must be 16 bytes");
+    if (keyBytes.length !== 32) {
+      throw new Error("PRF key must be 32 bytes");
     }
 
-    // Expand 16-byte key to 32 bytes for IPRF (key1 || key2)
-    const k32 = new Uint8Array(32);
-    k32.set(keyBytes, 0);
-    k32.set(keyBytes, 16);
-
-    const iprf = new IPRF(k32, setSize, chunkSize);
+    // Use the 32-byte key directly
+    const iprf = new IPRF(keyBytes, setSize, chunkSize);
     const indices = [];
 
     for (let i = 0; i < setSize; i++) {

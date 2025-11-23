@@ -220,9 +220,10 @@ class PMNS {
     let counter = 0n;
     
     while (processed < n) {
-      // perturb input: input[0..8] = low ^ counter
-      inputView.setBigUint64(0, low ^ counter, true);
-      // high part remains constant from seed
+      // perturb input: standard counter mode
+      // input[0..8] = counter, input[8..16] = high part of seed (nonce)
+      inputView.setBigUint64(0, counter, true);
+      // high part (bytes 8-15) remains constant from seed
       
       this.block.encryptBlock(input, output);
       counter++;

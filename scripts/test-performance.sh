@@ -74,11 +74,12 @@ else
     fi
 fi
 
-# FullSet query latency (target: <10ms)
-test_start "FullSet query latency (<${MAX_QUERY_LATENCY_MS}ms)"
-RESPONSE=$(curl -s -X POST http://localhost:3000/query/fullset \
+# SetParity query latency (target: <10ms)
+test_start "SetParity query latency (<${MAX_QUERY_LATENCY_MS}ms)"
+# Simulate a small set of indices
+RESPONSE=$(curl -s -X POST http://localhost:3000/query/setparity \
     -H "Content-Type: application/json" \
-    -d '{"prf_key": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}')
+    -d '{"indices": [0, 100, 200, 300, 400, 500, 600, 700, 800, 900]}')
 
 QUERY_TIME_NS=$(echo "$RESPONSE" | grep -o '"server_time_nanos":[0-9]*' | cut -d':' -f2)
 if [ -z "$QUERY_TIME_NS" ]; then
