@@ -122,11 +122,11 @@ func LoadConfig() Config {
 	}
 
 	if v := firstNonEmpty(os.Getenv("PLINKO_STATE_IPFS_API"), os.Getenv("IPFS_API")); v != "" {
-		cfg.IPFSAPI = v
+		cfg.IPFSAPI = strings.TrimSpace(v)
 	}
 
 	if v := firstNonEmpty(os.Getenv("PLINKO_STATE_IPFS_GATEWAY"), os.Getenv("IPFS_GATEWAY")); v != "" {
-		cfg.IPFSGateway = v
+		cfg.IPFSGateway = strings.TrimRight(strings.TrimSpace(v), "/")
 	}
 
 	cfg.DatabasePath = strings.TrimSpace(cfg.DatabasePath)

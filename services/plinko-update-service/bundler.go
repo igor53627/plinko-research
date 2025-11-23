@@ -40,7 +40,7 @@ type DeltaInfo struct {
 	CID   string `json:"cid"`
 }
 
-func NewDeltaBundler(cfg Config) (*DeltaBundler, error) {
+func NewDeltaBundler(cfg Config) *DeltaBundler {
 	ipfsPublisher, err := newIPFSPublisher(cfg.IPFSAPI, cfg.IPFSGateway)
 	if err != nil {
 		log.Printf("⚠️ Failed to initialize IPFS publisher: %v. Bundles will not be pinned to IPFS.", err)
@@ -51,7 +51,7 @@ func NewDeltaBundler(cfg Config) (*DeltaBundler, error) {
 	return &DeltaBundler{
 		cfg:           cfg,
 		ipfsPublisher: ipfsPublisher,
-	}, nil
+	}
 }
 
 func (b *DeltaBundler) ProcessBlock(blockNumber uint64) error {

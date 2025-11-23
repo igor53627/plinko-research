@@ -109,10 +109,7 @@ func main() {
 	}
 
 	// Initialize Delta Bundler
-	bundler, err := NewDeltaBundler(cfg)
-	if err != nil {
-		log.Fatalf("Failed to initialize delta bundler: %v", err)
-	}
+	bundler := NewDeltaBundler(cfg)
 
 	// Create service
 	service := &PlinkoUpdateService{

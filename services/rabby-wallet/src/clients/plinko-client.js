@@ -41,7 +41,7 @@ export class PlinkoClient {
   async getLatestDeltaBlock() {
     // Try manifest first
     const manifest = await this.fetchManifest();
-    if (manifest && manifest.latestBlock) {
+    if (manifest && manifest.latestBlock != null) {
       return manifest.latestBlock;
     }
 
@@ -73,6 +73,8 @@ export class PlinkoClient {
    * @returns {Promise<Uint8Array>} - Delta data
    */
   async downloadDelta(blockNumber) {
+    const filename = `delta-${blockNumber.toString().padStart(6, '0')}.bin`;
+
     // Check manifest for CID
     let url;
     if (this.manifest && this.manifest.deltas) {
@@ -84,7 +86,6 @@ export class PlinkoClient {
     }
 
     if (!url) {
-        const filename = `delta-${blockNumber.toString().padStart(6, '0')}.bin`;
         url = `${this.cdnUrl}/deltas/${filename}`;
     }
 
@@ -212,6 +213,11 @@ export class PlinkoClient {
   async syncDeltas(startBlock, endBlock, pirClient) {
     let totalDeltas = 0;
     let current = startBlock;
+
+    // Ensure manifest is loaded for bundle discovery
+    if (!this.manifest) {
+        await this.fetchManifest();
+    }
 
     while (current <= endBlock) {
         // Check for bundle
