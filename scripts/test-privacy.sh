@@ -167,12 +167,13 @@ else
     test_fail "Invalid response: $RESPONSE"
 fi
 
-test_start "FullSet query to PIR server"
-RESPONSE=$(curl -s -X POST http://localhost:3000/query/fullset \
+test_start "SetParity query to PIR server"
+# Generate 1024 random indices (simulated) or just a few for testing
+RESPONSE=$(curl -s -X POST http://localhost:3000/query/setparity \
     -H "Content-Type: application/json" \
-    -d '{"prf_key": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}')
+    -d '{"indices": [0, 100, 200, 300, 400]}')
 
-if echo "$RESPONSE" | grep -q "value"; then
+if echo "$RESPONSE" | grep -q "parity"; then
     test_pass
 else
     test_fail "Invalid response: $RESPONSE"

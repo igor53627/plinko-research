@@ -612,7 +612,6 @@ docker-compose up -d --build
 ### Slow Query Response Times
 
 **Symptoms**:
-- /query/fullset takes >50ms (expected: ~5ms)
 - High CPU usage on PIR server
 - Queries timeout
 

@@ -93,61 +93,6 @@ curl "http://localhost:3000/query/plaintext?index=12345"
 
 ---
 
-### Full Set Query (Private PIR)
-
-Execute a private PIR query using a PRF key.
-
-**Endpoint**: `POST /query/fullset`
-
-**Request**:
-```json
-{
-  "prf_key": [base64-encoded 16-byte PRF key]
-}
-```
-
-**Response** (200 OK):
-```json
-{
-  "value": 1500000000000000000,
-  "server_time_nanos": 5250000
-}
-```
-
-**Fields**:
-- `prf_key` ([]byte): 16-byte PRF key (base64 encoded in JSON)
-- `value` (uint64): XOR parity of all entries in the hint set
-- `server_time_nanos` (uint64): Server processing time (~5ms typical)
-
-**Privacy Guarantee**:
-The server computes XOR parity over ~1024 database entries determined by the PRF key. The server **cannot determine which specific index** was queried.
-
-**Example**:
-```bash
-curl -X POST http://localhost:3000/query/fullset \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prf_key": "AAAAAAAAAAAAAAAAAAAAAA=="
-  }'
-```
-
-**Server Logs** (Privacy Mode):
-```
-🔒 PRIVATE QUERY RECEIVED
-Server sees: PRF Key (16 bytes): 0000000000000000
-Server CANNOT determine:
-  ❌ Which address is being queried
-  ❌ Which balance is being requested
-  ❌ Any user information
-```
-
-**Status Codes**:
-- `200 OK`: Query successful
-- `400 Bad Request`: Invalid PRF key (must be 16 bytes)
-- `405 Method Not Allowed`: Only POST allowed
-
----
-
 ### Set Parity Query
 
 Compute XOR parity over a custom set of indices.
@@ -440,7 +385,6 @@ Typical response times on localhost:
 |----------|---------|-------|
 | `/health` | <1ms | No database access |
 | `/query/plaintext` | ~5ms | Direct database lookup |
-| `/query/fullset` | ~5ms | ~1024 XOR operations |
 | `/query/setparity` | Variable | Depends on indices count |
 | `/metrics` | <1ms | In-memory metrics |
 | `/snapshots/manifest.json` | ~10ms | File read |
@@ -453,16 +397,16 @@ Typical response times on localhost:
 ### JavaScript (Wallet Client)
 
 ```javascript
-// Private balance query
-async function queryBalance(prfKey) {
-  const response = await fetch('http://localhost:3000/query/fullset', {
+// Private balance query (Set Parity)
+async function queryBalance(indices) {
+  const response = await fetch('http://localhost:3000/query/setparity', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prf_key: prfKey })
+    body: JSON.stringify({ indices: indices })
   });
 
   const data = await response.json();
-  return data.value;
+  return data.parity;
 }
 
 // Download snapshot manifest
@@ -476,15 +420,14 @@ async function downloadManifest() {
 
 ```python
 import requests
-import base64
 
-# Private PIR query
-def query_balance(prf_key_bytes):
+# Private PIR query (Set Parity)
+def query_balance(indices):
     response = requests.post(
-        'http://localhost:3000/query/fullset',
-        json={'prf_key': base64.b64encode(prf_key_bytes).decode()}
+        'http://localhost:3000/query/setparity',
+        json={'indices': indices}
     )
-    return response.json()['value']
+    return response.json()['parity']
 
 # Download snapshot
 def download_snapshot():
@@ -495,14 +438,14 @@ def download_snapshot():
 ### Go
 
 ```go
-// Private PIR query
-func QueryBalance(prfKey []byte) (uint64, error) {
+// Private PIR query (Set Parity)
+func QueryBalance(indices []uint64) (uint64, error) {
     body, _ := json.Marshal(map[string]interface{}{
-        "prf_key": prfKey,
+        "indices": indices,
     })
 
     resp, err := http.Post(
-        "http://localhost:3000/query/fullset",
+        "http://localhost:3000/query/setparity",
         "application/json",
         bytes.NewBuffer(body),
     )
@@ -512,10 +455,11 @@ func QueryBalance(prfKey []byte) (uint64, error) {
     defer resp.Body.Close()
 
     var result struct {
-        Value uint64 `json:"value"`
+        Parity string `json:"parity"`
     }
     json.NewDecoder(resp.Body).Decode(&result)
-    return result.Value, nil
+    // Convert result.Parity (string) to uint64...
+    return 0, nil // simplified
 }
 ```
 

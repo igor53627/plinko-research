@@ -70,10 +70,12 @@ curl -X POST http://localhost:3000/query/plaintext \
   -H "Content-Type: application/json" \
   -d '{"index": 42}'
 
-# FullSet PIR query (private)
-curl -X POST http://localhost:3000/query/fullset \
+# SetParity PIR query (private)
+curl -X POST http://localhost:3000/query/setparity \
   -H "Content-Type: application/json" \
-  -d '{"query": "<base64-encoded-query>"}'
+  -d '{"indices": [100, 200, 300]}'
+
+# Download snapshot manifest
 ```
 
 ### CDN Mock (port 8080)

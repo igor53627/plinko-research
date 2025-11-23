@@ -34,15 +34,6 @@ type PlaintextQueryResponse struct {
 	ServerTimeNanos uint64 `json:"server_time_nanos"`
 }
 
-type FullSetQueryRequest struct {
-	PRFKey []byte `json:"prf_key"`
-}
-
-type FullSetQueryResponse struct {
-	Value           string `json:"value"`
-	ServerTimeNanos uint64 `json:"server_time_nanos"`
-}
-
 type SetParityQueryRequest struct {
 	Indices []uint64 `json:"indices"`
 }
@@ -170,71 +161,6 @@ func (s *PlinkoPIRServer) plaintextQueryHandler(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
-}
-
-func (s *PlinkoPIRServer) fullSetQueryHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req FullSetQueryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-
-	if len(req.PRFKey) != 16 {
-		http.Error(w, "PRF key must be 16 bytes", http.StatusBadRequest)
-		return
-	}
-
-	log.Println("========================================")
-	log.Println("🔒 PRIVATE QUERY RECEIVED")
-	log.Println("========================================")
-	log.Printf("Server sees: PRF Key (16 bytes): %x\n", req.PRFKey[:8])
-	log.Println("Server CANNOT determine:")
-	log.Println("  ❌ Which address is being queried")
-	log.Println("  ❌ Which balance is being requested")
-	log.Println("  ❌ Any user information")
-	log.Println("Server will compute parity over ~1024 database entries...")
-	log.Println("========================================")
-
-	startTime := time.Now()
-	parity := s.HandleFullSetQuery(req.PRFKey)
-	elapsed := time.Since(startTime)
-
-	log.Printf("✅ FullSet query completed in %v\n", elapsed)
-	log.Printf("Server response: Parity value: %s\n", parity.String())
-	log.Println("Server remains oblivious to queried address!")
-	log.Println("========================================")
-	log.Println()
-
-	resp := FullSetQueryResponse{
-		Value:           parity.String(),
-		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (s *PlinkoPIRServer) HandleFullSetQuery(prfKeyBytes []byte) DBEntry {
-	var prfKey PrfKey128
-	copy(prfKey[:], prfKeyBytes)
-
-	prSet := NewPRSet(prfKey, s.setSize, s.chunkSize)
-	expandedSet := prSet.Expand()
-
-	var parity DBEntry
-	for _, id := range expandedSet {
-		entry := s.DBAccess(id)
-		for k := 0; k < DBEntryLength; k++ {
-			parity[k] ^= entry[k]
-		}
-	}
-
-	return parity
 }
 
 func (s *PlinkoPIRServer) setParityQueryHandler(w http.ResponseWriter, r *http.Request) {
