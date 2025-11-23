@@ -553,7 +553,7 @@ make start
 ## Additional Resources
 
 - **[README.md](README.md)**: Project overview and quick start
-- **[Implementation Details](IMPLEMENTATION.md)**: Technical deep-dive
+- **[Implementation Details](https://github.com/igor53627/plinko-pir-docs/blob/main/IMPLEMENTATION.md)**: Technical deep-dive
 - **[services/state-syncer/README.md](services/state-syncer/README.md)**: iPRF implementation details
 
 ## Contact

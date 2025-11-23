@@ -43,7 +43,7 @@ docker-compose down
 ./scripts/init-poc.sh
 ```
 
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup instructions.
+See [Implementation Guide](https://github.com/igor53627/plinko-pir-docs/blob/main/IMPLEMENTATION.md) for detailed setup instructions.
 
 ## Research Documentation
 
@@ -85,4 +85,4 @@ docker-compose logs -f plinko-pir-server
 ./scripts/test-performance.sh
 ```
 
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for complete documentation.
+See [Implementation Guide](https://github.com/igor53627/plinko-pir-docs/blob/main/IMPLEMENTATION.md) for complete documentation.
