@@ -298,6 +298,10 @@ func saveDelta(path string, deltas []HintDelta) error {
 		return err
 	}
 
+	if err := f.Chmod(0644); err != nil {
+		return err
+	}
+
 	// Each delta record is: HintSetID (8 bytes) + IsBackupSet (8 bytes) + Delta (32 bytes = 4 * uint64)
 	// Total size: 8 + 8 + 32 = 48 bytes
 	var buf [48]byte

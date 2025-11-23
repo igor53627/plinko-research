@@ -423,7 +423,7 @@ func saveDelta(path string, deltas []HintDelta) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tempPath := f.Name()
-	
+
 	// Clean up temp file on error
 	defer func() {
 		if err != nil {
@@ -439,6 +439,10 @@ func saveDelta(path string, deltas []HintDelta) error {
 
 	if _, err = f.Write(header[:]); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	if err = f.Chmod(0644); err != nil {
+		return fmt.Errorf("failed to chmod temp file: %w", err)
 	}
 
 	// Write each delta
@@ -470,7 +474,7 @@ func saveDelta(path string, deltas []HintDelta) error {
 	if err = os.Rename(tempPath, path); err != nil {
 		// Attempt to remove temp file since rename failed and deferred cleanup
 		// might not trigger if err was nil before this block
-		os.Remove(tempPath) 
+		os.Remove(tempPath)
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
