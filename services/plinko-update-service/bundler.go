@@ -54,11 +54,6 @@ func NewDeltaBundler(cfg Config) *DeltaBundler {
 	}
 }
 
-func (b *DeltaBundler) ProcessBlock(blockNumber uint64) error {
-	// Deprecated: Use PublishDelta instead
-	return nil
-}
-
 func (b *DeltaBundler) PublishDelta(blockNumber uint64, path string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -134,30 +129,20 @@ func (b *DeltaBundler) createBundle(startBlock, endBlock uint64) error {
 }
 
 func (b *DeltaBundler) updateManifest() error {
-	manifestPath := filepath.Join(b.cfg.DeltaOutputDir, "manifest.json")
-	
-	var manifest Manifest
-	// Read existing manifest if it exists
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		json.Unmarshal(data, &manifest)
-	}
-
-	manifest.LatestBlock = b.latestBlock
-
-	data, err := json.MarshalIndent(manifest, "", "  ")
+	manifest, err := b.readManifest()
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(manifestPath, data, 0644)
+	manifest.LatestBlock = b.latestBlock
+
+	return b.writeManifest(manifest)
 }
 
 func (b *DeltaBundler) addBundleToManifest(start, end uint64, cid string) error {
-	manifestPath := filepath.Join(b.cfg.DeltaOutputDir, "manifest.json")
-	
-	var manifest Manifest
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		json.Unmarshal(data, &manifest)
+	manifest, err := b.readManifest()
+	if err != nil {
+		return err
 	}
 
 	// Check if bundle already exists
@@ -184,20 +169,13 @@ func (b *DeltaBundler) addBundleToManifest(start, end uint64, cid string) error 
 
 	manifest.LatestBlock = b.latestBlock
 
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(manifestPath, data, 0644)
+	return b.writeManifest(manifest)
 }
 
 func (b *DeltaBundler) addDeltaToManifest(block uint64, cid string) error {
-	manifestPath := filepath.Join(b.cfg.DeltaOutputDir, "manifest.json")
-	
-	var manifest Manifest
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		json.Unmarshal(data, &manifest)
+	manifest, err := b.readManifest()
+	if err != nil {
+		return err
 	}
 
 	// Check if delta already exists
@@ -223,48 +201,29 @@ func (b *DeltaBundler) addDeltaToManifest(block uint64, cid string) error {
 
 	manifest.LatestBlock = b.latestBlock
 	
-	// Trigger bundle creation if needed
-	if block > 0 && block%BundleSize == 0 {
-		// We need to create a bundle. But we are inside a lock (from PublishDelta).
-		// Wait, createBundle calls addBundleToManifest which writes to file.
-		// This is fine as long as we don't deadlock. PublishDelta holds lock. createBundle does NOT hold lock (it's private).
-		// But createBundle was called from ProcessBlock which held lock.
-		
-		// Refactor: createBundle should be called here?
-		// No, let's keep it simple.
-		
-		startBlock := block - BundleSize + 1
-		endBlock := block
-		
-		// We are holding lock in PublishDelta.
-		// createBundle reads files (IO) and writes file (IO) and IPFS (Net).
-		// It's better to do this outside lock or allow long lock?
-		// For simplicity, do it here.
-		
-		if err := b.createBundle(startBlock, endBlock); err != nil {
-			log.Printf("Failed to create bundle %d-%d: %v", startBlock, endBlock, err)
-		}
-		
-		// createBundle will update manifest again. This is a bit inefficient (write twice) but safe.
-		// Reload manifest because createBundle updated it?
-		// Yes, createBundle reads/writes manifest.
-		return nil
-	}
-
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
+	// Save manifest BEFORE triggering bundle creation
+	if err := b.writeManifest(manifest); err != nil {
 		return err
 	}
 
-	return os.WriteFile(manifestPath, data, 0644)
+	// Trigger bundle creation if needed
+	if block > 0 && block%BundleSize == 0 {
+		startBlock := block - BundleSize + 1
+		endBlock := block
+		
+		if err := b.createBundle(startBlock, endBlock); err != nil {
+			log.Printf("Failed to create bundle %d-%d: %v", startBlock, endBlock, err)
+			// Do not return error, as delta was successfully added
+		}
+	}
+
+	return nil
 }
 
 func (b *DeltaBundler) cleanupBundledDeltas(bundledUpTo uint64) error {
-	manifestPath := filepath.Join(b.cfg.DeltaOutputDir, "manifest.json")
-	
-	var manifest Manifest
-	if data, err := os.ReadFile(manifestPath); err == nil {
-		json.Unmarshal(data, &manifest)
+	manifest, err := b.readManifest()
+	if err != nil {
+		return err
 	}
 
 	// Filter out deltas that are <= bundledUpTo
@@ -276,10 +235,62 @@ func (b *DeltaBundler) cleanupBundledDeltas(bundledUpTo uint64) error {
 	}
 	manifest.Deltas = newDeltas
 
+	return b.writeManifest(manifest)
+}
+
+func (b *DeltaBundler) readManifest() (Manifest, error) {
+	manifestPath := filepath.Join(b.cfg.DeltaOutputDir, "manifest.json")
+	var manifest Manifest
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return manifest, nil
+		}
+		return manifest, fmt.Errorf("failed to read manifest: %w", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return manifest, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+	return manifest, nil
+}
+
+func (b *DeltaBundler) writeManifest(manifest Manifest) error {
+	manifestPath := filepath.Join(b.cfg.DeltaOutputDir, "manifest.json")
+	
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
-	return os.WriteFile(manifestPath, data, 0644)
+	// Atomic write: write to temp file then rename
+	dir := filepath.Dir(manifestPath)
+	tmpFile, err := os.CreateTemp(dir, "manifest-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp manifest file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	
+	// Clean up in case of error before rename
+	defer func() {
+		tmpFile.Close()
+		if _, err := os.Stat(tmpPath); err == nil {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		return fmt.Errorf("failed to write to temp manifest file: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temp manifest file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp manifest file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, manifestPath); err != nil {
+		return fmt.Errorf("failed to rename manifest file: %w", err)
+	}
+	
+	return nil
 }
