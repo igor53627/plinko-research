@@ -168,7 +168,9 @@ func (b *DeltaBundler) addDeltaToManifest(block uint64, cid string) error {
 	exists := false
 	for i, delta := range manifest.Deltas {
 		if delta.Block == block {
-			manifest.Deltas[i].CID = cid
+			if cid != "" {
+				manifest.Deltas[i].CID = cid
+			}
 			exists = true
 			break
 		}
