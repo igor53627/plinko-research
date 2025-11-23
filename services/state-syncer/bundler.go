@@ -115,7 +115,12 @@ func (b *DeltaBundler) createBundle(startBlock, endBlock uint64) error {
 	}
 
 	// Clean up individual deltas from manifest that are now bundled
-	return b.cleanupBundledDeltas(endBlock)
+	if err := b.cleanupBundledDeltas(endBlock); err != nil {
+		log.Printf("Failed to clean up bundled deltas up to block %d: %v", endBlock, err)
+		// Non-critical error, so we don't return it to allow processing to continue
+	}
+
+	return nil
 }
 
 func (b *DeltaBundler) addBundleToManifest(start, end uint64, cid string) error {
