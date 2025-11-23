@@ -105,7 +105,7 @@ Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
 
 **Key Innovation**: First PIR system achieving real-time blockchain sync (79× faster updates than SimplePIR)
 
-**[View detailed research findings in the documentation repository →](../plinko-pir-docs/research/FINDINGS.md)**
+**[View detailed research findings in the documentation repository →](https://github.com/igor53627/plinko-pir-docs/blob/main/research/FINDINGS.md)**
 
 ## Documentation
 
