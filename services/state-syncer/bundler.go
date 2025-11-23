@@ -133,7 +133,9 @@ func (b *DeltaBundler) addBundleToManifest(start, end uint64, cid string) error 
 	exists := false
 	for i, bundle := range manifest.Bundles {
 		if bundle.StartBlock == start && bundle.EndBlock == end {
-			manifest.Bundles[i].CID = cid // Update CID if changed
+			if cid != "" {
+				manifest.Bundles[i].CID = cid // Update CID if available
+			}
 			exists = true
 			break
 		}
