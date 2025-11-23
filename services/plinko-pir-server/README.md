@@ -32,17 +32,11 @@ The system consists of three main components:
 
 ## API Endpoints
 
-### `POST /query/fullset`
-Performs a standard PIR query using a PRF key.
--   **Input**: `{"prf_key": "hex_encoded_16_bytes"}`
--   **Output**: `{"value": string (decimal representation of 256-bit parity)}`
--   **Description**: The server expands the PRF key to a set of indices and computes their XOR parity.
-
 ### `POST /query/setparity`
 Performs a PIR query using an explicit set of indices.
 -   **Input**: `{"indices": [id1, id2, ...]}`
 -   **Output**: `{"parity": string (decimal representation of 256-bit parity)}`
--   **Description**: Used by the client for "punctured set" queries where specific indices need to be included/excluded.
+-   **Description**: The client expands the query set locally (using iPRF) and sends the explicit indices. The server computes the XOR parity of the values at these indices.
 
 ### `GET /health`
 Returns service health and configuration.
