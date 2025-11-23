@@ -65,23 +65,23 @@ func TestLoadServerFromDatabase(t *testing.T) {
 	}
 
 	totalEntries := expectedChunk * expectedSet
-	// server.database stores flattened uint64s, so length is totalEntries * DBEntryLength (4)
-	if uint64(len(server.database)) != totalEntries*4 {
-		t.Fatalf("database length mismatch: got %d want %d", len(server.database), totalEntries*4)
+	// server.database stores flattened uint64s, so length is totalEntries * DBEntryLength
+	if uint64(len(server.database)) != totalEntries*DBEntryLength {
+		t.Fatalf("database length mismatch: got %d want %d", len(server.database), totalEntries*DBEntryLength)
 	}
 
 	for i := 0; i < 10; i++ {
 		// We only set the first word of each entry
-		if server.database[i*4] != uint64(i+1) {
-			t.Fatalf("entry %d mismatch: got %d want %d", i, server.database[i*4], i+1)
+		if server.database[i*DBEntryLength] != uint64(i+1) {
+			t.Fatalf("entry %d mismatch: got %d want %d", i, server.database[i*DBEntryLength], i+1)
 		}
 	}
 
 	// Check padding (entries 10 to totalEntries-1)
 	for i := 10; uint64(i) < totalEntries; i++ {
-		for w := 0; w < 4; w++ {
-			if server.database[i*4+w] != 0 {
-				t.Fatalf("padding entry %d word %d expected zero got %d", i, w, server.database[i*4+w])
+		for w := 0; w < DBEntryLength; w++ {
+			if server.database[i*DBEntryLength+w] != 0 {
+				t.Fatalf("padding entry %d word %d expected zero got %d", i, w, server.database[i*DBEntryLength+w])
 			}
 		}
 	}
