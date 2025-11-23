@@ -196,7 +196,6 @@ MIT License - see [LICENSE](LICENSE) file
 
 - **GitHub**: https://github.com/igor53627/plinko-pir-research
 - **Plinko Paper**: https://eprint.iacr.org/2024/318
-- **Plinko Summary**: https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7
 - **Issues**: https://github.com/igor53627/plinko-pir-research/issues
 
 ---
