@@ -142,9 +142,10 @@ client, err := ethclient.Dial(httpURL)
 
 **Wallet Frontend → PIR Server (from browser):**
 ```javascript
-const response = await fetch('http://localhost:3000/query/fullset', {
+// Example: Query from wallet to PIR server
+const response = await fetch('http://localhost:3000/query/setparity', {
   method: 'POST',
-  body: JSON.stringify(query)
+  body: JSON.stringify({ indices: [1, 2, 3] })
 });
 ```
 

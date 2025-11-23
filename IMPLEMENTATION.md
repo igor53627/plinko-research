@@ -99,8 +99,7 @@ See [docs/SERVICE_ADDRESSING.md](docs/SERVICE_ADDRESSING.md) for detailed networ
          │
          ├─────────► Plinko PIR Server (Go, http://localhost:3000)
          │           - Plaintext queries
-         │           - FullSet queries (Plinko PIR)
-         │           - PunctSet queries
+         │           - SetParity queries
          │
          ├─────────► CDN Mock (nginx, http://localhost:8080)
          │           - hint.bin (~70 MB)
@@ -203,7 +202,7 @@ Background process (every 30 seconds):
 | System | Query Type | Server Ops | Client Ops | Communication | Updates |
 |--------|-----------|-----------|-----------|---------------|---------|
 | **FrodoPIR** | Matrix PIR | O(√n) | O(√n) | O(√n) | Full rebuild |
-| **Plinko PIR** | FullSet PIR | O(√n) | O(√n) | O(√n) | Plinko deltas |
+| **Plinko PIR** | SetParity | O(√n) | O(√n) | O(√n) | Plinko deltas |
 | **Plinko Updates** | Delta XOR | O(1) per entry | O(1) XOR | O(1) per change | Incremental |
 
 **Key Advantages of Plinko PIR:**
@@ -259,7 +258,6 @@ Background process (every 30 seconds):
 - **Port**: 3000
 - **API Endpoints**:
   - `POST /query/plaintext` - Direct database lookup (testing)
-  - `POST /query/fullset` - Plinko FullSet PIR query
   - `POST /query/punctset` - Plinko PunctSet PIR query
   - `GET /health` - Health check
 - **Privacy**: NEVER logs queried addresses
@@ -739,7 +737,7 @@ plinko-pir-poc/
 │   │   ├── go.mod
 │   │   ├── go.sum
 │   │   ├── main.go
-│   │   └── prset.go
+│   │   └── server.go
 │   │
 │   ├── cdn-mock/                # CDN Mock
 │   │   ├── Dockerfile

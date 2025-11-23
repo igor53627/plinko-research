@@ -94,14 +94,6 @@ go test -v ./...
 # 87/87 tests passing (100%)
 ```
 
-### Python Tests
-
-```bash
-cd plinko-reference
-python3 test_iprf_simple.py
-# 10/10 tests passing (100%)
-```
-
 ## Research Findings
 
 Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
@@ -124,7 +116,6 @@ Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
 - **[Development Guide](DEVELOPMENT.md)**: Detailed development setup and contribution guide
 - **[Implementation Details](IMPLEMENTATION.md)**: Technical deep-dive
 - **[State Syncer README](services/state-syncer/README.md)**: iPRF implementation details
-- **[Python Implementation](plinko-reference/IPRF_IMPLEMENTATION.md)**: Python reference guide
 
 ## Research Paper
 

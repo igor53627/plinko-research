@@ -296,33 +296,12 @@ go test -v -run TestSystemIntegration
 # - Query/response flow
 ```
 
-### Performance Benchmarks
+3. Run iPRF benchmarks:
+   ```bash
+   go test -bench=. services/state-syncer/
+   ```
 
-```bash
-# Run all benchmarks
-go test -bench=. -benchmem
-
-# Key benchmarks:
-# - BenchmarkIPRFForward: ~10µs per operation
-# - BenchmarkIPRFInverse: ~60µs per operation
-# - BenchmarkTablePRPForward: ~0.5ns per operation
-# - BenchmarkTablePRPInverse: ~0.5ns per operation
-```
-
-### Python Reference Tests
-
-```bash
-cd plinko-reference
-python3 test_iprf_simple.py
-
-# Tests:
-# - Binomial sampling correctness
-# - Inverse correctness
-# - Distribution uniformity
-# - Edge cases (empty bins, overflow)
-```
-
-## Code Quality
+### 3. End-to-End Testing
 
 ### Pre-commit Checks
 
@@ -577,7 +556,6 @@ make start
 - **[IMPLEMENTATION.md](IMPLEMENTATION.md)**: Technical deep-dive
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Production deployment
 - **[services/state-syncer/README.md](services/state-syncer/README.md)**: iPRF implementation details
-- **[plinko-reference/IPRF_IMPLEMENTATION.md](plinko-reference/IPRF_IMPLEMENTATION.md)**: Python reference
 
 ## Contact
 
