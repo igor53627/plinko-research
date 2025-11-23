@@ -151,12 +151,15 @@ export class PlinkoPIRClient {
         const hintIndices = iprf.inverse(beta);
         
         for (const hintIdx of hintIndices) {
-            const hOffset = hintIdx * 32;
-            // XOR into hint
-            view.setBigUint64(hOffset, view.getBigUint64(hOffset, true) ^ w0, true);
-            view.setBigUint64(hOffset+8, view.getBigUint64(hOffset+8, true) ^ w1, true);
-            view.setBigUint64(hOffset+16, view.getBigUint64(hOffset+16, true) ^ w2, true);
-            view.setBigUint64(hOffset+24, view.getBigUint64(hOffset+24, true) ^ w3, true);
+            // Only include this element if the block (alpha) is in the partition P for this hint
+            if (this.isBlockInP(hintIdx, alpha)) {
+                const hOffset = hintIdx * 32;
+                // XOR into hint
+                view.setBigUint64(hOffset, view.getBigUint64(hOffset, true) ^ w0, true);
+                view.setBigUint64(hOffset+8, view.getBigUint64(hOffset+8, true) ^ w1, true);
+                view.setBigUint64(hOffset+16, view.getBigUint64(hOffset+16, true) ^ w2, true);
+                view.setBigUint64(hOffset+24, view.getBigUint64(hOffset+24, true) ^ w3, true);
+            }
         }
 
         if (i % 1000 === 0) {
