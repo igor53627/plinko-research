@@ -389,36 +389,179 @@ export class PlinkoPIRClient {
   }
 
   async downloadBinary(url, label, fallbackSize, onProgress, cacheKey = null) {
-     // ... (Copy original logic) ...
-     // Simplified for this context:
-    const response = await fetch(url);
-    const data = await response.arrayBuffer();
-    return new Uint8Array(data);
+    const CACHE_NAME = 'plinko-data-v1';
+    const hasCacheApi = typeof caches !== 'undefined';
+
+    // 1. Check cache first
+    if (cacheKey && hasCacheApi) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) {
+          console.log(`📦 Served ${label} from cache`);
+          if (onProgress) onProgress(100);
+          const buffer = await cachedResponse.arrayBuffer();
+          return new Uint8Array(buffer);
+        }
+      } catch (err) {
+        console.warn('Cache check failed:', err);
+      }
+    }
+
+    console.log(`📥 Downloading ${label} from ${url}...`);
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download ${label}: ${response.status}`);
+    }
+
+    const contentLength = response.headers.get('content-length');
+    const total = contentLength ? parseInt(contentLength, 10) : fallbackSize || 0;
+
+    const reader = response.body.getReader();
+    let receivedLength = 0;
+    const chunks = [];
+
+    let lastLogTime = Date.now();
+    const startTime = Date.now();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      chunks.push(value);
+      receivedLength += value.length;
+
+      if (total > 0) {
+        const now = Date.now();
+        if (now - lastLogTime > 500) {
+          const percent = ((receivedLength / total) * 100).toFixed(1);
+          const receivedMB = (receivedLength / 1024 / 1024).toFixed(1);
+          const totalMB = (total / 1024 / 1024).toFixed(1);
+          const elapsed = (now - startTime) / 1000;
+          const speed = (receivedLength / 1024 / 1024 / elapsed).toFixed(1);
+          console.log(`📶 ${label}: ${percent}% (${receivedMB}/${totalMB} MB) - ${speed} MB/s`);
+          if (onProgress) onProgress(Number(percent));
+          lastLogTime = now;
+        }
+      }
+    }
+
+    const chunksAll = new Uint8Array(receivedLength);
+    let position = 0;
+    for (const chunk of chunks) {
+      chunksAll.set(chunk, position);
+      position += chunk.length;
+    }
+
+    // 2. Save to cache
+    if (cacheKey && hasCacheApi) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const responseToCache = new Response(chunksAll);
+        await cache.put(cacheKey, responseToCache);
+        console.log(`💾 Cached ${label}`);
+      } catch (err) {
+        console.warn('Failed to write to cache:', err);
+      }
+    }
+
+    const finalSize = (receivedLength / 1024 / 1024).toFixed(1);
+    console.log(`✅ Downloaded ${label} (${finalSize} MB)`);
+    return chunksAll;
   }
 
   async verifySnapshotHash(bytes, expectedHex) {
-      // ... (Copy original logic) ...
+    if (!expectedHex) {
+      return;
+    }
+    let hashBytes;
+    const subtle = browserCrypto?.subtle;
+    if (subtle && typeof subtle.digest === 'function') {
+      const hashBuffer = await subtle.digest('SHA-256', bytes);
+      hashBytes = new Uint8Array(hashBuffer);
+    } else {
+      console.warn('⚠️ WebCrypto subtle API unavailable; falling back to @noble/hashes for snapshot verification');
+      hashBytes = sha256(bytes);
+    }
+    const actualHex = this.bufferToHex(hashBytes);
+    if (actualHex.toLowerCase() !== expectedHex.toLowerCase()) {
+      throw new Error(`Snapshot hash mismatch. Expected ${expectedHex}, got ${actualHex}`);
+    }
+    console.log(`✅ Snapshot hash verified (${expectedHex.slice(0, 8)}...)`);
+  }
+
+  bufferToHex(bytes) {
+    return Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 
   async downloadAddressMapping(onProgress) {
-      // ... (Copy original logic) ...
-      // I'll just implement a stub or copy if I can. 
-      // The user wants a fix. I should provide working code.
-      // I'll implement a minimal version of the helpers.
-      
-      const url = `${this.cdnUrl}/address-mapping.bin`;
-      const response = await fetch(url);
-      const data = await response.arrayBuffer();
-      // Parse
-      this.addressMapping = new Map();
-      const view = new DataView(data);
-      const num = data.byteLength / 24;
-      for(let i=0; i<num; i++) {
-          const addrBytes = new Uint8Array(data, i*24, 20);
-          const addr = '0x' + Array.from(addrBytes).map(b => b.toString(16).padStart(2,'0')).join('');
-          const idx = view.getUint32(i*24+20, true);
-          this.addressMapping.set(addr.toLowerCase(), idx);
+    // Add cache-busting timestamp to force fresh download
+    // This ensures we get the NEW file, not cached old Anvil data
+    const timestamp = Date.now();
+    const url = `${this.cdnUrl}/address-mapping.bin?v=${timestamp}`;
+    const mappingEntries = this.metadata?.dbSize || DATASET_STATS.addressCount;
+    const mappingBytes = mappingEntries * 24;
+    const mappingMB = Number((mappingBytes / 1024 / 1024).toFixed(1));
+    const mappingLabel = `address-mapping.bin (~${mappingMB} MB)`;
+    
+    // Use snapshot version in cache key to ensure we get matching mapping for the DB
+    const cacheKey = `address-mapping-${this.snapshotVersion}`;
+
+    const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes, onProgress, cacheKey);
+
+    const mappingData = chunksAll.buffer;
+    const view = new DataView(mappingData);
+
+    // Parse address-mapping.bin
+    // Format: [20 bytes address][4 bytes index (little-endian)] repeated
+    this.addressMapping = new Map();
+
+    const entrySize = 24; // 20 bytes address + 4 bytes index
+    const numEntries = mappingData.byteLength / entrySize;
+
+    console.log(`📊 Parsing ${numEntries.toLocaleString()} address entries...`);
+
+    for (let i = 0; i < numEntries; i++) {
+      const offset = i * entrySize;
+
+      // Read 20-byte address
+      const addressBytes = new Uint8Array(mappingData, offset, 20);
+      const addressHex = '0x' + Array.from(addressBytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      // Read 4-byte index (little-endian)
+      const index = view.getUint32(offset + 20, true);
+
+      this.addressMapping.set(addressHex.toLowerCase(), index);
+    }
+
+    const finalSize = (chunksAll.byteLength / 1024 / 1024).toFixed(1);
+    console.log(`✅ Address mapping loaded (${finalSize} MB, ${this.addressMapping.size.toLocaleString()} addresses)`);
+
+    // Log address range for debugging and cache verification
+    if (this.addressMapping.size > 0) {
+      const addresses = Array.from(this.addressMapping.keys()).sort();
+      const firstAddr = addresses[0];
+      const lastAddr = addresses[addresses.length - 1];
+      console.log(`📍 Address range: ${firstAddr} to ${lastAddr}`);
+      const expectedCount = (this.metadata?.dbSize || DATASET_STATS.addressCount).toLocaleString();
+      console.log(`ℹ️  Expected dataset size: ${expectedCount} Ethereum addresses from the initial 99k mainnet blocks`);
+
+      // Detect stale Anvil cache
+      if (firstAddr.startsWith('0x1000')) {
+        console.error(`❌ STALE CACHE DETECTED! Got Anvil test data (0x1000...) instead of real Ethereum data (0x0000...)`);
+        console.error(`⚠️  Please hard-refresh (Ctrl+Shift+R or Cmd+Shift+R) to clear browser cache`);
       }
+    }
   }
 
   addressToIndex(address) {
