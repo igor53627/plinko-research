@@ -39,6 +39,7 @@ type PlinkoUpdateService struct {
 	client          *ethclient.Client
 	database        []uint64 // In-memory database
 	updateManager   *PlinkoUpdateManager
+	bundler         *DeltaBundler
 	blockHeight     uint64
 	deltasGenerated uint64
 	cfg             Config
@@ -107,10 +108,14 @@ func main() {
 		log.Fatalf("Failed to create delta directory: %v", err)
 	}
 
+	// Initialize Delta Bundler
+	bundler := NewDeltaBundler(cfg)
+
 	// Create service
 	service := &PlinkoUpdateService{
 		database:        database,
 		updateManager:   pm,
+		bundler:         bundler,
 		blockHeight:     0,
 		deltasGenerated: 0,
 		cfg:             cfg,
@@ -275,6 +280,12 @@ func (s *PlinkoUpdateService) processBlock(ctx context.Context, blockNumber uint
 		updateDuration, blockDuration)
 	recordBlock(blockNumber, len(updates), blockDuration)
 
+	// Process bundling (and update manifest)
+	// We now call PublishDelta which handles manifest update and triggers bundling if needed
+	if err := s.bundler.PublishDelta(blockNumber, deltaPath); err != nil {
+		log.Printf("⚠️ Bundler error for block %d: %v\n", blockNumber, err)
+	}
+
 	return nil
 }
 
@@ -412,7 +423,7 @@ func saveDelta(path string, deltas []HintDelta) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tempPath := f.Name()
-	
+
 	// Clean up temp file on error
 	defer func() {
 		if err != nil {
@@ -428,6 +439,10 @@ func saveDelta(path string, deltas []HintDelta) error {
 
 	if _, err = f.Write(header[:]); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	if err = f.Chmod(0644); err != nil {
+		return fmt.Errorf("failed to chmod temp file: %w", err)
 	}
 
 	// Write each delta
@@ -459,7 +474,7 @@ func saveDelta(path string, deltas []HintDelta) error {
 	if err = os.Rename(tempPath, path); err != nil {
 		// Attempt to remove temp file since rename failed and deferred cleanup
 		// might not trigger if err was nil before this block
-		os.Remove(tempPath) 
+		os.Remove(tempPath)
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
