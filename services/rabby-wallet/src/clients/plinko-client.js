@@ -144,7 +144,7 @@ export class PlinkoClient {
         if (buffer.byteLength - offset < 16) break;
         
         const count = Number(view.getBigUint64(offset, true));
-        const size = 16 + count * 48;
+        const size = 16 + count * 40;
         
         if (offset + size > buffer.byteLength) {
             console.warn("Truncated delta bundle");
@@ -175,7 +175,7 @@ export class PlinkoClient {
     }
 
     const count = Number(view.getBigUint64(0, true));
-    const expectedSize = 16 + count * 48;
+    const expectedSize = 16 + count * 40;
 
     if (view.byteLength < expectedSize) {
       console.warn(`Delta file truncated. Expected ${expectedSize} bytes, got ${view.byteLength} bytes. Count: ${count}`);
@@ -189,15 +189,14 @@ export class PlinkoClient {
       // Read 32-byte delta (4 * uint64)
       const deltaVal = new Uint8Array(32);
       for (let j = 0; j < 32; j++) {
-        deltaVal[j] = view.getUint8(offset + 16 + j);
+        deltaVal[j] = view.getUint8(offset + 8 + j);
       }
 
       deltas.push({
-        hintSetID: Number(view.getBigUint64(offset, true)),
-        isBackupSet: view.getBigUint64(offset + 8, true) !== 0n,
+        index: Number(view.getBigUint64(offset, true)),
         delta: deltaVal
       });
-      offset += 48;
+      offset += 40;
     }
 
     return deltas;
@@ -330,7 +329,7 @@ export class PlinkoClient {
     }
 
     // Delegate to PlinkoPIRClient which knows the internal hint structure
-    pirClient.applyHintDelta(delta.hintSetID, delta.delta);
+    pirClient.applyAccountDelta(delta.index, delta.delta);
   }
 
   /**

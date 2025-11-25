@@ -570,20 +570,39 @@ export class PlinkoPIRClient {
       return idx;
   }
 
-  // New method for delta
-  applyHintDelta(hintSetID, delta) {
+  // Apply raw account delta to local private hints
+  applyAccountDelta(accountIndex, delta) {
       if (!this.hints) return;
-      const offset = hintSetID * 32;
-      if (offset + 32 > this.hints.byteLength) return;
       
-      const view = new DataView(this.hints.buffer);
-      // XOR delta
-      // Delta is 32 bytes
+      const { chunkSize } = this.metadata;
+      const alpha = Math.floor(accountIndex / chunkSize);
+      const beta = accountIndex % chunkSize;
+      
+      // 1. Find hint sets containing this element
+      const iprf = this.iprfs[alpha];
+      const hintIndices = iprf.inverse(beta);
+      
+      // 2. Create view for delta
       const dView = new DataView(delta.buffer, delta.byteOffset, 32);
-      
-      view.setBigUint64(offset, view.getBigUint64(offset, true) ^ dView.getBigUint64(0, true), true);
-      view.setBigUint64(offset+8, view.getBigUint64(offset+8, true) ^ dView.getBigUint64(8, true), true);
-      view.setBigUint64(offset+16, view.getBigUint64(offset+16, true) ^ dView.getBigUint64(16, true), true);
-      view.setBigUint64(offset+24, view.getBigUint64(offset+24, true) ^ dView.getBigUint64(24, true), true);
+      const d0 = dView.getBigUint64(0, true);
+      const d1 = dView.getBigUint64(8, true);
+      const d2 = dView.getBigUint64(16, true);
+      const d3 = dView.getBigUint64(24, true);
+
+      const view = new DataView(this.hints.buffer);
+
+      for (const hintIdx of hintIndices) {
+          // Only update hint if the block (alpha) is in the partition P for this hint
+          if (this.isBlockInP(hintIdx, alpha)) {
+              const offset = hintIdx * 32;
+              if (offset + 32 > this.hints.byteLength) continue;
+
+              // XOR delta into hint
+              view.setBigUint64(offset, view.getBigUint64(offset, true) ^ d0, true);
+              view.setBigUint64(offset+8, view.getBigUint64(offset+8, true) ^ d1, true);
+              view.setBigUint64(offset+16, view.getBigUint64(offset+16, true) ^ d2, true);
+              view.setBigUint64(offset+24, view.getBigUint64(offset+24, true) ^ d3, true);
+          }
+      }
   }
 }
