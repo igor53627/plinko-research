@@ -5,9 +5,9 @@ import (
 )
 
 const (
-	DBEntrySize   = 32  // Size of each database entry in bytes
+	DBEntrySize   = 32 // Size of each database entry in bytes
 	DBEntryLength = 4  // Number of uint64 values per database entry
-	
+
 	// Note: The current implementation assumes DBEntryLength = 4.
 	// If this changes, the indexing logic in applyDatabaseUpdate and other
 	// functions may need to be reviewed for correctness.
@@ -26,99 +26,40 @@ type DBUpdate struct {
 	NewValue DBEntry // New value to set
 }
 
-// HintDelta represents an incremental hint update for the client
+// HintDelta represents an incremental state update for the client
 type HintDelta struct {
-	HintSetID   uint64  // Which hint set to update
-	IsBackupSet bool    // true if BackupSet, false if LocalSet
-	Delta       DBEntry // XOR delta to apply
+	Index uint64  // Database index that changed
+	Delta DBEntry // XOR delta to apply
 }
 
 // PlinkoUpdateManager handles incremental database updates
 type PlinkoUpdateManager struct {
 	database     []uint64 // Reference to the database
-	iprf         *IPRF    // Invertible PRF for mapping indices to hint sets
 	chunkSize    uint64
 	setSize      uint64
 	dbSize       uint64
-	indexToHint  []uint64 // Pre-computed mapping: indexToHint[i] = hint set for database index i
-	useCacheMode bool     // If true, use pre-computed cache instead of iPRF calls
 }
 
-// NewPlinkoUpdateManager creates a new update manager with secure key generation
+// NewPlinkoUpdateManager creates a new update manager
 func NewPlinkoUpdateManager(database []uint64, dbSize, chunkSize, setSize uint64) *PlinkoUpdateManager {
-	// Create iPRF for mapping database indices to hint sets
-	// Domain: n = DBSize (number of database entries)
-	// Range: m = SetSize (number of chunks/hint sets)
-
-	// Use cryptographically secure random key for production
-	key := GenerateRandomKey()
-
-	iprf := NewIPRF(key, dbSize, setSize)
-
 	return &PlinkoUpdateManager{
 		database:     database,
-		iprf:         iprf,
 		chunkSize:    chunkSize,
 		setSize:      setSize,
 		dbSize:       dbSize,
-		indexToHint:  nil,
-		useCacheMode: false,
 	}
 }
 
-// NewPlinkoUpdateManagerWithKey creates a new update manager with a specific key
-// This allows for deterministic testing or key management
-func NewPlinkoUpdateManagerWithKey(database []uint64, dbSize, chunkSize, setSize uint64, key PrfKey128) *PlinkoUpdateManager {
-	// Create iPRF for mapping database indices to hint sets
-	iprf := NewIPRF(key, dbSize, setSize)
-
-	return &PlinkoUpdateManager{
-		database:     database,
-		iprf:         iprf,
-		chunkSize:    chunkSize,
-		setSize:      setSize,
-		dbSize:       dbSize,
-		indexToHint:  nil,
-		useCacheMode: false,
-	}
-}
-
-// EnableCacheMode pre-computes the index-to-hint mapping for O(1) lookups
-// This trades memory (64 MB for 8.4M accounts) for speed (79× faster updates)
-//
-// Memory cost: DBSize × 8 bytes = 8.4M × 8 = 64 MB
-// Speedup: Eliminates iPRF.Forward() calls (major bottleneck)
-func (pm *PlinkoUpdateManager) EnableCacheMode() time.Duration {
-	startTime := time.Now()
-
-	// Allocate cache array
-	pm.indexToHint = make([]uint64, pm.dbSize)
-
-	// Pre-compute hint mapping for all database indices
-	for i := uint64(0); i < pm.dbSize; i++ {
-		pm.indexToHint[i] = pm.iprf.Forward(i)
-
-		// Progress indicator (every 1M entries)
-		if i > 0 && i%(1<<20) == 0 {
-			// Silent for production
-		}
-	}
-
-	pm.useCacheMode = true
-	return time.Since(startTime)
-}
-
-// ApplyUpdates processes a batch of database updates and generates hint deltas
+// ApplyUpdates processes a batch of database updates and generates raw state deltas
 //
 // Algorithm:
 //  1. For each updated database entry:
-//     a. Use iPRF to find which hint sets are affected
-//     b. Compute XOR delta: delta = old_value ⊕ new_value
-//     c. Generate HintDelta for each affected hint set
+//     a. Compute XOR delta: delta = old_value ⊕ new_value
+//     b. Generate HintDelta (renamed to StateDelta concept) containing the Index and Delta
 //  2. Apply database updates
-//  3. Return hint deltas for client
+//  3. Return deltas for client
 //
-// Complexity: O(|updates|) with O(1) per update (Plinko's guarantee)
+// Complexity: O(|updates|)
 func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, time.Duration) {
 	startTime := time.Now()
 
@@ -128,25 +69,17 @@ func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, ti
 		// Step 1: Apply database update
 		pm.applyDatabaseUpdate(update)
 
-		// Step 2: Find affected hint set
-		// Use pre-computed cache if available, otherwise compute via iPRF
-		hintSetID := pm.iprf.Forward(update.Index)
-		if pm.useCacheMode && update.Index < uint64(len(pm.indexToHint)) {
-			// O(1) lookup from pre-computed cache
-			hintSetID = pm.indexToHint[update.Index]
-		}
-
-		// Step 3: Compute XOR delta
+		// Step 2: Compute XOR delta
 		var delta DBEntry
 		for i := 0; i < DBEntryLength; i++ {
 			delta[i] = update.OldValue[i] ^ update.NewValue[i]
 		}
 
-		// Step 4: Generate hint delta
+		// Step 3: Generate state delta
+		// We no longer compute HintSetID here. The client will map Index -> HintSetID using their private key.
 		deltas = append(deltas, HintDelta{
-			HintSetID:   hintSetID,
-			IsBackupSet: false,
-			Delta:       delta,
+			Index: update.Index,
+			Delta: delta,
 		})
 	}
 
@@ -161,11 +94,11 @@ func (pm *PlinkoUpdateManager) applyDatabaseUpdate(update DBUpdate) {
 		// Index out of valid range - skip
 		return
 	}
-	
+
 	// Calculate the starting position in the flat database array
 	// Each DBEntry occupies DBEntryLength uint64 values
 	startIdx := update.Index * DBEntryLength
-	
+
 	// Check bounds before proceeding
 	if startIdx+DBEntryLength > uint64(len(pm.database)) {
 		// Database array too small - skip

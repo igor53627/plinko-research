@@ -110,7 +110,7 @@ func main() {
 	}
 
 	manager := NewPlinkoUpdateManager(db, dbSize, chunkSize, setSize)
-	manager.EnableCacheMode()
+	// manager.EnableCacheMode() - Removed as we now use raw deltas (no server-side hint mapping)
 
 	if err := os.MkdirAll(cfg.DeltaDir, 0o755); err != nil {
 		log.Fatalf("create delta dir: %v", err)
@@ -302,20 +302,16 @@ func saveDelta(path string, deltas []HintDelta) error {
 		return err
 	}
 
-	// Each delta record is: HintSetID (8 bytes) + IsBackupSet (8 bytes) + Delta (32 bytes = 4 * uint64)
-	// Total size: 8 + 8 + 32 = 48 bytes
-	var buf [48]byte
+	// Each delta record is: Index (8 bytes) + Delta (32 bytes = 4 * uint64)
+	// Total size: 8 + 32 = 40 bytes
+	var buf [40]byte
 
 	for _, delta := range deltas {
-		binary.LittleEndian.PutUint64(buf[0:8], delta.HintSetID)
-		if delta.IsBackupSet {
-			binary.LittleEndian.PutUint64(buf[8:16], 1)
-		} else {
-			binary.LittleEndian.PutUint64(buf[8:16], 0)
-		}
+		binary.LittleEndian.PutUint64(buf[0:8], delta.Index)
+		
 		// Write the 4 uint64 words of the DBEntry
 		for i := 0; i < DBEntryLength; i++ {
-			binary.LittleEndian.PutUint64(buf[16+i*8:16+(i+1)*8], delta.Delta[i])
+			binary.LittleEndian.PutUint64(buf[8+i*8:8+(i+1)*8], delta.Delta[i])
 		}
 		if _, err := f.Write(buf[:]); err != nil {
 			return err
