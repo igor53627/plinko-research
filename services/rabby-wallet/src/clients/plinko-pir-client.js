@@ -7,6 +7,11 @@ const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto
   : null;
 const UINT256_MAX = (1n << 256n) - 1n;
 
+// IPRF algorithm version - increment when IPRF implementation changes
+// v1: Original exact binomial sampling (slow)
+// v2: Normal approximation for large n (87x faster, different outputs)
+const IPRF_VERSION = 2;
+
 // Check if Web Workers are available
 const hasWorkers = typeof Worker !== 'undefined';
 const numCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
@@ -79,9 +84,9 @@ export class PlinkoPIRClient {
       await this.saveToCache('snapshot-db', expectedHash, snapshotBytes);
     }
 
-    // Try to load cached hints (keyed by snapshot hash + master key hash)
+    // Try to load cached hints (keyed by snapshot hash + master key hash + IPRF version)
     const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
-    const hintsCacheKey = `hints-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
+    const hintsCacheKey = `hints-v${IPRF_VERSION}-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
     log(`🔑 Hints cache key: ${hintsCacheKey}`);
     const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
     
