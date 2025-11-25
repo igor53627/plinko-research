@@ -11,6 +11,7 @@ import { IPRF } from '../crypto/iprf.js';
 let iprfs = null;
 let numHints = 0;
 let chunkSize = 0;
+let chunkStart = 0;
 
 /**
  * MurmurHash3-based block partition check
@@ -29,12 +30,14 @@ function isBlockInP(hintIdx, blockIdx) {
  * Initialize worker with IPRF keys
  */
 function initialize(data) {
-  const { chunkKeys, metadata } = data;
+  const { chunkKeys, metadata, chunkStartIdx } = data;
   
   numHints = metadata.setSize * 64;
   chunkSize = metadata.chunkSize;
+  chunkStart = chunkStartIdx;
   
   // Create IPRFs for assigned chunk range
+  // Keys are indexed 0..N for this worker's chunks
   iprfs = chunkKeys.map(keyBytes => {
     const key = new Uint8Array(keyBytes);
     return new IPRF(key, numHints, chunkSize);
@@ -47,7 +50,7 @@ function initialize(data) {
  * Process assigned chunks and generate partial hints
  */
 function processChunks(data) {
-  const { chunkStart, chunkEnd, snapshotBytes, dbSize } = data;
+  const { chunkEnd, snapshotBytes, dbSize } = data;
   
   // Create partial hints buffer
   const partialHints = new Uint8Array(numHints * 32);
@@ -61,7 +64,9 @@ function processChunks(data) {
   const totalChunks = chunkEnd - chunkStart;
   
   for (let alpha = chunkStart; alpha < chunkEnd; alpha++) {
-    const iprf = iprfs[alpha];
+    // Local index into iprfs array (0-based for this worker)
+    const localIdx = alpha - chunkStart;
+    const iprf = iprfs[localIdx];
     
     // Pre-compute inverse table for this chunk
     const inverseTable = new Array(chunkSize);
@@ -106,14 +111,12 @@ function processChunks(data) {
     
     processedChunks++;
     
-    // Report progress every 10 chunks
-    if (processedChunks % 10 === 0) {
-      self.postMessage({
-        type: 'progress',
-        processed: processedChunks,
-        total: totalChunks
-      });
-    }
+    // Report progress every chunk for responsive UI
+    self.postMessage({
+      type: 'progress',
+      processed: processedChunks,
+      total: totalChunks
+    });
   }
   
   // Transfer the buffer back to main thread

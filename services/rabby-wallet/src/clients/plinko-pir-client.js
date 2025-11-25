@@ -175,6 +175,144 @@ export class PlinkoPIRClient {
   }
 
   async generateHints(snapshotBytes, onProgress, checkpointKey, checkpoint) {
+    // Try Web Workers first for parallel processing
+    if (hasWorkers && !checkpoint) {
+      try {
+        console.log(`🔧 Attempting Web Worker parallel hint generation...`);
+        await this.generateHintsWithWorkers(snapshotBytes, onProgress);
+        return;
+      } catch (err) {
+        console.warn(`⚠️ Web Workers failed, falling back to main thread:`, err.message);
+      }
+    }
+    
+    // Fallback: main thread sequential processing
+    await this.generateHintsMainThread(snapshotBytes, onProgress, checkpointKey, checkpoint);
+  }
+
+  /**
+   * Generate hints using Web Workers for parallel processing
+   * Expected 4-8x speedup depending on core count
+   */
+  async generateHintsWithWorkers(snapshotBytes, onProgress) {
+    const dbSize = this.metadata.dbSize;
+    const numChunks = this.iprfs.length;
+    const numWorkers = Math.min(numCores, 8);
+    const chunksPerWorker = Math.ceil(numChunks / numWorkers);
+    
+    console.log(`⚡ Using ${numWorkers} Web Workers for hint generation (${numChunks} chunks, ${chunksPerWorker} per worker)`);
+    
+    // Track progress across all workers
+    const workerProgress = new Array(numWorkers).fill(0);
+    let lastLogTime = Date.now();
+    
+    const updateProgress = () => {
+      const totalProcessed = workerProgress.reduce((a, b) => a + b, 0);
+      const pct = (totalProcessed / numChunks) * 100;
+      if (onProgress) onProgress('hint_generation', pct);
+      
+      const now = Date.now();
+      if (now - lastLogTime > 1000) {
+        console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${totalProcessed}/${numChunks} chunks)`);
+        lastLogTime = now;
+      }
+    };
+    
+    // Create workers
+    const workerPromises = [];
+    
+    for (let w = 0; w < numWorkers; w++) {
+      const chunkStart = w * chunksPerWorker;
+      const chunkEnd = Math.min(chunkStart + chunksPerWorker, numChunks);
+      
+      if (chunkStart >= numChunks) break;
+      
+      // Get keys for this worker's chunk range
+      const workerKeys = this.chunkKeys.slice(chunkStart, chunkEnd).map(k => Array.from(k));
+      
+      // Create worker using Vite's recommended syntax
+      const worker = new Worker(
+        new URL('../workers/hint-worker.js', import.meta.url),
+        { type: 'module' }
+      );
+      
+      const workerPromise = new Promise((resolve, reject) => {
+        const workerIdx = w;
+        let initTimeout = setTimeout(() => {
+          worker.terminate();
+          reject(new Error(`Worker ${workerIdx} initialization timeout`));
+        }, 10000);
+        
+        worker.onmessage = (e) => {
+          const { type, ...data } = e.data;
+          
+          switch (type) {
+            case 'initialized':
+              clearTimeout(initTimeout);
+              console.log(`🔧 Worker ${workerIdx} initialized (chunks ${chunkStart}-${chunkEnd})`);
+              // Send process command with snapshot copy
+              worker.postMessage({
+                type: 'process',
+                chunkEnd,
+                snapshotBytes: snapshotBytes.buffer.slice(0),
+                dbSize
+              });
+              break;
+              
+            case 'progress':
+              workerProgress[workerIdx] = data.processed;
+              updateProgress();
+              break;
+              
+            case 'complete':
+              workerProgress[workerIdx] = chunkEnd - chunkStart;
+              updateProgress();
+              console.log(`✅ Worker ${workerIdx} complete`);
+              resolve(new Uint8Array(data.partialHints));
+              worker.terminate();
+              break;
+          }
+        };
+        
+        worker.onerror = (err) => {
+          clearTimeout(initTimeout);
+          worker.terminate();
+          reject(new Error(`Worker ${workerIdx} error: ${err.message}`));
+        };
+        
+        // Initialize worker with keys and metadata
+        worker.postMessage({
+          type: 'initialize',
+          chunkKeys: workerKeys,
+          metadata: this.metadata,
+          chunkStartIdx: chunkStart
+        });
+      });
+      
+      workerPromises.push(workerPromise);
+    }
+    
+    // Wait for all workers to complete
+    const partialResults = await Promise.all(workerPromises);
+    
+    // XOR all partial hints together
+    this.hints = new Uint8Array(this.numHints * 32);
+    const hintsU32 = new Uint32Array(this.hints.buffer);
+    
+    for (const partial of partialResults) {
+      const partialU32 = new Uint32Array(partial.buffer);
+      for (let i = 0; i < hintsU32.length; i++) {
+        hintsU32[i] ^= partialU32[i];
+      }
+    }
+    
+    console.log(`✅ Web Worker hint generation complete`);
+  }
+
+  /**
+   * Fallback: Generate hints on main thread with batched processing
+   */
+  async generateHintsMainThread(snapshotBytes, onProgress, checkpointKey, checkpoint) {
     const dbSize = this.metadata.dbSize;
     const chunkSize = this.metadata.chunkSize;
     const numChunks = this.iprfs.length;
@@ -188,14 +326,12 @@ export class PlinkoPIRClient {
       this.hints = new Uint8Array(this.numHints * 32);
     }
     
-    // Use parallel processing with multiple "virtual workers" (chunked processing)
-    // This gives us the benefit of progress updates without actual Web Workers
-    // which have complex setup requirements in bundled environments
+    // Use batched processing for progress updates
     const NUM_PARALLEL = Math.min(numCores, 8);
     const chunksRemaining = numChunks - startChunk;
     const chunksPerBatch = Math.ceil(chunksRemaining / NUM_PARALLEL);
     
-    console.log(`⚡ Using ${NUM_PARALLEL} parallel batches for hint generation`);
+    console.log(`⚡ Using ${NUM_PARALLEL} batches for main-thread hint generation`);
     
     const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const hintsU32 = new Uint32Array(this.hints.buffer);
