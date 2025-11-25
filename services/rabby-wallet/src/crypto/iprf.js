@@ -201,6 +201,53 @@ class PMNS {
   sampleBinomial(n, p, low, high) {
     if (n === 0n) return 0n;
     
+    const nNum = Number(n);
+    
+    // For large n, use normal approximation (O(1) instead of O(n))
+    // Binomial(n, p) ≈ Normal(np, np(1-p)) for large n
+    if (nNum > 100) {
+      return this.sampleBinomialNormal(n, p, low, high);
+    }
+    
+    // For small n, use exact bit counting
+    return this.sampleBinomialExact(n, p, low, high);
+  }
+  
+  // O(1) normal approximation for large n
+  sampleBinomialNormal(n, p, low, high) {
+    const nNum = Number(n);
+    const mean = nNum * p;
+    const variance = nNum * p * (1 - p);
+    const stddev = Math.sqrt(variance);
+    
+    // Generate deterministic random from (low, high) using AES
+    const seed = new Uint8Array(16);
+    const seedView = new DataView(seed.buffer);
+    seedView.setBigUint64(0, low, true);
+    seedView.setBigUint64(8, high, true);
+    
+    const output = new Uint8Array(16);
+    this.block.encryptBlock(seed, output);
+    
+    // Convert to uniform [0, 1) using first 8 bytes
+    const outView = new DataView(output.buffer);
+    const u1 = (outView.getUint32(0, true) >>> 0) / 4294967296;
+    const u2 = (outView.getUint32(4, true) >>> 0) / 4294967296;
+    
+    // Box-Muller transform for standard normal
+    const z = Math.sqrt(-2 * Math.log(u1 + 1e-10)) * Math.cos(2 * Math.PI * u2);
+    
+    // Transform to binomial approximation
+    let result = Math.round(mean + stddev * z);
+    
+    // Clamp to valid range [0, n]
+    result = Math.max(0, Math.min(nNum, result));
+    
+    return BigInt(result);
+  }
+  
+  // O(n) exact sampling for small n
+  sampleBinomialExact(n, p, low, high) {
     const seed = new Uint8Array(16);
     const seedView = new DataView(seed.buffer);
     seedView.setBigUint64(0, low, true);
@@ -211,7 +258,7 @@ class PMNS {
     const inputView = new DataView(input.buffer);
     
     const output = new Uint8Array(16);
-    const outputView = new DataView(output.buffer); // Reused in loop via encryptBlock
+    const outputView = new DataView(output.buffer);
     
     let successes = 0n;
     const isHalf = Math.abs(p - 0.5) < 0.000001;
@@ -220,18 +267,12 @@ class PMNS {
     let counter = 0n;
     
     while (processed < n) {
-      // perturb input: standard counter mode
-      // input[0..8] = counter, input[8..16] = high part of seed (nonce)
       inputView.setBigUint64(0, counter, true);
-      // high part (bytes 8-15) remains constant from seed
-      
       this.block.encryptBlock(input, output);
       counter++;
       
-      // Process 16 bytes
       for (let i = 0; i < 16 && processed < n; i++) {
         if (isHalf) {
-          // Count bits
           const val = output[i];
           for (let b = 0; b < 8 && processed < n; b++) {
             if ((val & (1 << b)) !== 0) {
@@ -240,10 +281,9 @@ class PMNS {
             processed++;
           }
         } else {
-          // Generic case: 4 bytes -> float
           if (i + 4 <= 16) {
             const rndVal = outputView.getUint32(i, true);
-            const rndFloat = rndVal / 4294967296.0; // 2^32
+            const rndFloat = rndVal / 4294967296.0;
             if (rndFloat < p) {
               successes++;
             }
