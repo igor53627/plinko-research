@@ -46,7 +46,7 @@ func TestInversePerformanceComplexity(t *testing.T) {
 			totalDuration := time.Duration(0)
 
 			for i := 0; i < testCount; i++ {
-				y := uint64(i * 100) % tc.m
+				y := uint64(i*100) % tc.m
 
 				start := time.Now()
 
@@ -112,7 +112,7 @@ func TestPerformanceScaling(t *testing.T) {
 		start := time.Now()
 
 		for j := 0; j < testCount; j++ {
-			y := uint64(j * 10) % m
+			y := uint64(j*10) % m
 			_ = eiprf.Inverse(y)
 		}
 
@@ -185,7 +185,7 @@ func TestPRPInversePerformance(t *testing.T) {
 			start := time.Now()
 
 			for i := 0; i < testCount; i++ {
-				y := uint64(i * 1000) % tc.n
+				y := uint64(i*1000) % tc.n
 				x := prp.InversePermute(y, tc.n)
 
 				// Verify correctness
@@ -430,9 +430,9 @@ func TestMemoryUsageProfile(t *testing.T) {
 		m              uint64
 		maxMemoryBytes uint64
 	}{
-		{1000, 100, 100_000},         // 100KB
-		{10000, 1000, 500_000},       // 500KB
-		{100000, 1024, 10_000_000},   // 10MB
+		{1000, 100, 100_000},          // 100KB
+		{10000, 1000, 500_000},        // 500KB
+		{100000, 1024, 10_000_000},    // 10MB
 		{1_000_000, 1024, 50_000_000}, // 50MB
 	}
 

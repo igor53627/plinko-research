@@ -1,4 +1,4 @@
-import { Aes128 } from './aes128.js';
+import { FastAes128 } from './aes128-fast.js';
 
 export class IPRF {
   constructor(key, n, m) {
@@ -32,7 +32,7 @@ export class IPRF {
 
 class FeistelPRP {
   constructor(key, n) {
-    this.block = new Aes128(key);
+    this.block = new FastAes128(key);
     this.n = BigInt(n);
     
     let bits = 0;
@@ -128,7 +128,7 @@ class PMNS {
         throw new Error("PMNS currently assumes m is a power of two for Plinko parameters");
     }
 
-    this.block = new Aes128(key);
+    this.block = new FastAes128(key);
     this.n = BigInt(n);
     this.m = mBig;
   }

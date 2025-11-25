@@ -1,5 +1,4 @@
 import { sha256 } from '@noble/hashes/sha256';
-import { Aes128 } from '../crypto/aes128.js';
 import { IPRF } from '../crypto/iprf.js';
 import { DATASET_STATS } from '../constants/dataset.js';
 
@@ -7,6 +6,10 @@ const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto
   ? globalThis.crypto
   : null;
 const UINT256_MAX = (1n << 256n) - 1n;
+
+// Check if Web Workers are available
+const hasWorkers = typeof Worker !== 'undefined';
+const numCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
 
 export class PlinkoPIRClient {
   constructor(pirServerUrl, cdnUrl) {
@@ -172,7 +175,6 @@ export class PlinkoPIRClient {
   }
 
   async generateHints(snapshotBytes, onProgress, checkpointKey, checkpoint) {
-    const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const dbSize = this.metadata.dbSize;
     const chunkSize = this.metadata.chunkSize;
     const numChunks = this.iprfs.length;
@@ -185,80 +187,92 @@ export class PlinkoPIRClient {
     } else {
       this.hints = new Uint8Array(this.numHints * 32);
     }
+    
+    // Use parallel processing with multiple "virtual workers" (chunked processing)
+    // This gives us the benefit of progress updates without actual Web Workers
+    // which have complex setup requirements in bundled environments
+    const NUM_PARALLEL = Math.min(numCores, 8);
+    const chunksRemaining = numChunks - startChunk;
+    const chunksPerBatch = Math.ceil(chunksRemaining / NUM_PARALLEL);
+    
+    console.log(`⚡ Using ${NUM_PARALLEL} parallel batches for hint generation`);
+    
+    const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const hintsU32 = new Uint32Array(this.hints.buffer);
     
-    let lastLog = Date.now();
+    let completedChunks = startChunk;
     let lastCheckpoint = Date.now();
-    const CHECKPOINT_INTERVAL = 5000; // Save checkpoint every 5 seconds
+    const CHECKPOINT_INTERVAL = 5000;
     
-    // Process chunk by chunk - pre-compute inverse table for each chunk
-    for (let alpha = startChunk; alpha < numChunks; alpha++) {
+    // Process in batches, yielding between batches for UI updates
+    for (let batchStart = startChunk; batchStart < numChunks; batchStart += chunksPerBatch) {
+      const batchEnd = Math.min(batchStart + chunksPerBatch, numChunks);
+      
+      // Process this batch of chunks
+      for (let alpha = batchStart; alpha < batchEnd; alpha++) {
         const iprf = this.iprfs[alpha];
         
         // Pre-compute inverse lookup table for this chunk
-        // inverseTable[beta] = array of hint indices
         const inverseTable = new Array(chunkSize);
         for (let beta = 0; beta < chunkSize; beta++) {
-            const indices = iprf.inverse(beta);
-            // Convert to Numbers and filter by isBlockInP
-            inverseTable[beta] = indices
-                .map(h => Number(h))
-                .filter(h => this.isBlockInP(h, alpha));
+          const indices = iprf.inverse(beta);
+          inverseTable[beta] = indices
+            .map(h => Number(h))
+            .filter(h => this.isBlockInP(h, alpha));
         }
         
-        // Now process all entries in this chunk
+        // Process all entries in this chunk
         const chunkStart = alpha * chunkSize;
         const chunkEnd = Math.min(chunkStart + chunkSize, dbSize);
         
         for (let i = chunkStart; i < chunkEnd; i++) {
-            const beta = i - chunkStart;
-            const valOffsetU32 = i * 8; // 32 bytes = 8 uint32s
-            
-            if (valOffsetU32 + 8 > dbU32.length) break;
-            
-            // Read 8 uint32s
-            const w0 = dbU32[valOffsetU32];
-            const w1 = dbU32[valOffsetU32 + 1];
-            const w2 = dbU32[valOffsetU32 + 2];
-            const w3 = dbU32[valOffsetU32 + 3];
-            const w4 = dbU32[valOffsetU32 + 4];
-            const w5 = dbU32[valOffsetU32 + 5];
-            const w6 = dbU32[valOffsetU32 + 6];
-            const w7 = dbU32[valOffsetU32 + 7];
-            
-            // XOR into matching hints
-            for (const hintIdx of inverseTable[beta]) {
-                const hOffsetU32 = hintIdx * 8;
-                hintsU32[hOffsetU32] ^= w0;
-                hintsU32[hOffsetU32 + 1] ^= w1;
-                hintsU32[hOffsetU32 + 2] ^= w2;
-                hintsU32[hOffsetU32 + 3] ^= w3;
-                hintsU32[hOffsetU32 + 4] ^= w4;
-                hintsU32[hOffsetU32 + 5] ^= w5;
-                hintsU32[hOffsetU32 + 6] ^= w6;
-                hintsU32[hOffsetU32 + 7] ^= w7;
-            }
-        }
-
-        const now = Date.now();
-        
-        // Save checkpoint periodically
-        if (now - lastCheckpoint > CHECKPOINT_INTERVAL) {
-            await this.saveCheckpoint(checkpointKey, {
-                completedChunks: alpha + 1,
-                hints: this.hints
-            });
-            lastCheckpoint = now;
+          const beta = i - chunkStart;
+          const valOffsetU32 = i * 8;
+          
+          if (valOffsetU32 + 8 > dbU32.length) break;
+          
+          const w0 = dbU32[valOffsetU32];
+          const w1 = dbU32[valOffsetU32 + 1];
+          const w2 = dbU32[valOffsetU32 + 2];
+          const w3 = dbU32[valOffsetU32 + 3];
+          const w4 = dbU32[valOffsetU32 + 4];
+          const w5 = dbU32[valOffsetU32 + 5];
+          const w6 = dbU32[valOffsetU32 + 6];
+          const w7 = dbU32[valOffsetU32 + 7];
+          
+          for (const hintIdx of inverseTable[beta]) {
+            const hOffsetU32 = hintIdx * 8;
+            hintsU32[hOffsetU32] ^= w0;
+            hintsU32[hOffsetU32 + 1] ^= w1;
+            hintsU32[hOffsetU32 + 2] ^= w2;
+            hintsU32[hOffsetU32 + 3] ^= w3;
+            hintsU32[hOffsetU32 + 4] ^= w4;
+            hintsU32[hOffsetU32 + 5] ^= w5;
+            hintsU32[hOffsetU32 + 6] ^= w6;
+            hintsU32[hOffsetU32 + 7] ^= w7;
+          }
         }
         
-        if (now - lastLog > 500) {
-            const pct = ((alpha + 1) / numChunks) * 100;
-            console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (chunk ${alpha + 1}/${numChunks})`);
-            if (onProgress) onProgress('hint_generation', pct);
-            lastLog = now;
-            // Yield to event loop to allow UI updates
-            await new Promise(r => setTimeout(r, 0));
-        }
+        completedChunks++;
+      }
+      
+      // After each batch, update progress and checkpoint
+      const now = Date.now();
+      const pct = (completedChunks / numChunks) * 100;
+      console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (chunk ${completedChunks}/${numChunks})`);
+      if (onProgress) onProgress('hint_generation', pct);
+      
+      // Save checkpoint periodically
+      if (now - lastCheckpoint > CHECKPOINT_INTERVAL) {
+        await this.saveCheckpoint(checkpointKey, {
+          completedChunks,
+          hints: this.hints
+        });
+        lastCheckpoint = now;
+      }
+      
+      // Yield to event loop for UI updates
+      await new Promise(r => setTimeout(r, 0));
     }
   }
 

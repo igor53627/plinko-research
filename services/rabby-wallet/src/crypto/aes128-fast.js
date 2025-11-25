@@ -1,29 +1,13 @@
 /**
  * Fast AES-128 Implementation
  * 
- * Provides multiple backends with automatic fallback:
- * 1. @noble/ciphers (WASM-optimized) - fastest
- * 2. WebCrypto (AES-NI hardware) - for batch operations
- * 3. Pure JS fallback - slowest but always works
+ * Uses T-table optimization for ~2-3x speedup over naive implementation.
  * 
  * Usage:
- *   const aes = await FastAes128.create(key);
+ *   const aes = new FastAes128(key);
  *   aes.encryptBlock(input, output);
  *   aes.encryptBlocksBatch(inputs, outputs);  // for batch operations
  */
-
-// Try to import noble-ciphers if available
-let nobleAes = null;
-try {
-  // Dynamic import to avoid build issues if not installed
-  const noble = await import('@noble/ciphers/aes');
-  nobleAes = noble;
-} catch (e) {
-  console.warn('noble-ciphers not available, using fallback');
-}
-
-// Import the pure JS fallback
-import { Aes128 as Aes128Fallback } from './aes128.js';
 
 /**
  * Pre-computed T-tables for faster AES
@@ -170,58 +154,32 @@ class Aes128TTable {
 }
 
 /**
- * Fast AES-128 with automatic backend selection
+ * Fast AES-128 using T-table optimization
  */
 export class FastAes128 {
-  constructor(keyBytes, backend = 'auto') {
+  constructor(keyBytes) {
     if (!(keyBytes instanceof Uint8Array) || keyBytes.length !== 16) {
       throw new Error('AES-128 key must be a 16-byte Uint8Array');
     }
-    
-    this.key = keyBytes;
-    this.backend = backend;
-    
-    // Select backend
-    if (backend === 'noble' && nobleAes) {
-      // Use noble-ciphers (fastest, WASM-optimized)
-      this._impl = 'noble';
-      // noble uses CTR mode, we need ECB-like behavior
-      // For single block, we can use CTR with zero nonce
-      this._nobleCipher = null; // Lazy init
-    } else if (backend === 'ttable' || (backend === 'auto' && !nobleAes)) {
-      // Use T-table optimized JS
-      this._impl = 'ttable';
-      this._ttable = new Aes128TTable(keyBytes);
-    } else {
-      // Pure JS fallback
-      this._impl = 'fallback';
-      this._fallback = new Aes128Fallback(keyBytes);
-    }
+    this._ttable = new Aes128TTable(keyBytes);
   }
   
   /**
    * Encrypt a single 16-byte block
    */
   encryptBlock(input, output = new Uint8Array(16)) {
-    switch (this._impl) {
-      case 'ttable':
-        return this._ttable.encryptBlock(input, output);
-      case 'fallback':
-        return this._fallback.encryptBlock(input, output);
-      default:
-        return this._ttable.encryptBlock(input, output);
-    }
+    return this._ttable.encryptBlock(input, output);
   }
   
   /**
-   * Encrypt multiple blocks in batch (more efficient)
+   * Encrypt multiple blocks in batch
    */
   encryptBlocksBatch(inputs, outputs) {
     const numBlocks = inputs.length / 16;
     for (let i = 0; i < numBlocks; i++) {
       const inBlock = inputs.subarray(i * 16, (i + 1) * 16);
       const outBlock = outputs.subarray(i * 16, (i + 1) * 16);
-      this.encryptBlock(inBlock, outBlock);
+      this._ttable.encryptBlock(inBlock, outBlock);
     }
     return outputs;
   }

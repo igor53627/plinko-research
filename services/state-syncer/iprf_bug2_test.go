@@ -8,8 +8,9 @@ import (
 // inverse returns preimages in the ORIGINAL domain [0, n), not permuted space.
 //
 // Bug #2 Context: EnhancedIPRF composes PRP and PMNS:
-//   Forward:  x → P(x) → S(P(x)) = y
-//   Inverse:  y → S⁻¹(y) = {permuted_x} → P⁻¹(permuted_x) = {x}
+//
+//	Forward:  x → P(x) → S(P(x)) = y
+//	Inverse:  y → S⁻¹(y) = {permuted_x} → P⁻¹(permuted_x) = {x}
 //
 // The bug occurs if inverse returns {permuted_x} instead of {x}.
 func TestBug2EnhancedIPRFInverseSpaceCorrect(t *testing.T) {
@@ -91,8 +92,8 @@ func TestBug2SpaceTransformation(t *testing.T) {
 	// Test a sample of inputs
 	for x := uint64(0); x < n; x += 10 {
 		// Manual composition
-		permutedX := prp.Permute(x, n)       // P(x)
-		y := baseIPRF.Forward(permutedX)     // S(P(x))
+		permutedX := prp.Permute(x, n)   // P(x)
+		y := baseIPRF.Forward(permutedX) // S(P(x))
 
 		// Enhanced iPRF should produce same result
 		yEnhanced := eiprf.Forward(x)

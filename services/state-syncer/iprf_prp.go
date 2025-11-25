@@ -210,13 +210,11 @@ func (prp *PRP) inverseBruteForce(y uint64, n uint64) (uint64, error) {
 	return 0, fmt.Errorf("inverseBruteForce: no preimage found for value %d in domain [0, %d) - this indicates a serious PRP implementation bug where the permutation is not a proper bijection", y, n)
 }
 
-
-
 // EnhancedIPRF combines PRP with the existing binomial sampling
 // This implements the full iPRF construction from the paper
 type EnhancedIPRF struct {
-	prp  *PRP      // Pseudorandom permutation layer
-	base *IPRF    // Base binomial sampling (acts as PMNS)
+	prp  *PRP  // Pseudorandom permutation layer
+	base *IPRF // Base binomial sampling (acts as PMNS)
 }
 
 // NewEnhancedIPRF creates the complete iPRF as specified in the paper
@@ -231,7 +229,7 @@ func NewEnhancedIPRF(prpKey PrfKey128, baseKey PrfKey128, n uint64, m uint64) *E
 func (eiprf *EnhancedIPRF) Forward(x uint64) uint64 {
 	// Step 1: Apply PRP to input
 	permutedX := eiprf.prp.Permute(x, eiprf.base.domain)
-	
+
 	// Step 2: Apply base iPRF (which acts as PMNS)
 	return eiprf.base.Forward(permutedX)
 }
@@ -239,21 +237,23 @@ func (eiprf *EnhancedIPRF) Forward(x uint64) uint64 {
 // Inverse returns all x ∈ [0, n) such that Forward(x) = y
 //
 // Implementation follows paper Theorem 4.4:
-//   iF.F⁻¹((k1,k2), y) = {P⁻¹(k1, x) : x ∈ S⁻¹(k2, y)}
+//
+//	iF.F⁻¹((k1,k2), y) = {P⁻¹(k1, x) : x ∈ S⁻¹(k2, y)}
 //
 // CRITICAL: Returns preimages in ORIGINAL domain [0, n), not permuted space.
 // The two-step process is:
-//   1. Find preimages in permuted space: S⁻¹(k2, y) → {permuted_x}
-//   2. Transform back to original space: P⁻¹(k1, permuted_x) → {x}
+//  1. Find preimages in permuted space: S⁻¹(k2, y) → {permuted_x}
+//  2. Transform back to original space: P⁻¹(k1, permuted_x) → {x}
 //
 // Bug #2 Fix: Previous implementations correctly applied both transformations.
 // This validates that the inverse composition properly reverses both the PRP
 // and the base iPRF, ensuring all returned preimages are in the original domain.
 //
 // Mathematical correctness:
-//   For any x ∈ [0,n): Forward(x) = y implies x ∈ Inverse(y)
-//   All elements of Inverse(y) are in [0,n)
-//   Inverse(Forward(x)) contains x (round-trip correctness)
+//
+//	For any x ∈ [0,n): Forward(x) = y implies x ∈ Inverse(y)
+//	All elements of Inverse(y) are in [0,n)
+//	Inverse(Forward(x)) contains x (round-trip correctness)
 func (eiprf *EnhancedIPRF) Inverse(y uint64) []uint64 {
 	// Step 1: Find all preimages in the base iPRF (permuted space)
 	// S⁻¹(k2, y) returns values in permuted domain
@@ -285,19 +285,19 @@ func (eiprf *EnhancedIPRF) GetPreimageSize() uint64 {
 func (eiprf *EnhancedIPRF) InverseFixed(y uint64) []uint64 {
 	// Step 1: Find all preimages in the base iPRF (permuted space) using fixed implementation
 	permutedPreimages := eiprf.base.InverseFixed(y)
-	
+
 	// Step 2: Apply inverse PRP to each preimage to get back to original space
 	preimages := make([]uint64, 0, len(permutedPreimages))
 	for _, permutedX := range permutedPreimages {
 		originalX := eiprf.prp.InversePermute(permutedX, eiprf.base.domain)
 		preimages = append(preimages, originalX)
 	}
-	
+
 	// Sort for deterministic output
 	sort.Slice(preimages, func(i, j int) bool {
 		return preimages[i] < preimages[j]
 	})
-	
+
 	return preimages
 }
 

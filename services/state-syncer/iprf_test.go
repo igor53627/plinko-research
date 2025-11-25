@@ -13,20 +13,20 @@ func TestIPRFForwardBackward(t *testing.T) {
 	// Test parameters
 	n := uint64(1000) // domain size
 	m := uint64(100)  // range size
-	
+
 	// Create deterministic key for reproducible tests
 	key := GenerateDeterministicKey()
-	
+
 	// Create base iPRF (proven to work correctly)
 	iprf := NewIPRF(key, n, m)
-	
+
 	// Test forward and inverse for several inputs
 	for x := uint64(0); x < 100; x++ {
 		y := iprf.Forward(x)
 		if y >= m {
 			t.Errorf("Forward(%d) = %d, expected < %d", x, y, m)
 		}
-		
+
 		// Test inverse
 		preimages := iprf.Inverse(y)
 		found := false
@@ -47,25 +47,25 @@ func TestIPRFDistribution(t *testing.T) {
 	// Test parameters
 	n := uint64(10000) // domain size
 	m := uint64(100)   // range size
-	
+
 	// Use deterministic keys for reproducible test results
 	prpKey := GenerateDeterministicKeyWithSeed(42)
 	baseKey := GenerateDeterministicKeyWithSeed(24)
-	
+
 	// Create enhanced iPRF
 	iprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
-	
+
 	// Count distribution
 	distribution := make(map[uint64]int)
 	for x := uint64(0); x < n; x++ {
 		y := iprf.Forward(x)
 		distribution[y]++
 	}
-	
+
 	// Expected size per output
 	expectedSize := float64(n) / float64(m)
 	tolerance := 0.3 // 30% tolerance
-	
+
 	// Check that each output has approximately the expected number of preimages
 	for y := uint64(0); y < m; y++ {
 		size := distribution[y]
@@ -73,14 +73,14 @@ func TestIPRFDistribution(t *testing.T) {
 			t.Errorf("Output %d has no preimages", y)
 			continue
 		}
-		
+
 		deviation := math.Abs(float64(size)-expectedSize) / expectedSize
 		if deviation > tolerance {
-			t.Errorf("Output %d has %d preimages, expected ~%.1f (deviation: %.1f%%)", 
+			t.Errorf("Output %d has %d preimages, expected ~%.1f (deviation: %.1f%%)",
 				y, size, expectedSize, deviation*100)
 		}
 	}
-	
+
 	// Check total coverage
 	totalPreimages := 0
 	for _, count := range distribution {
@@ -96,32 +96,32 @@ func TestIPRFInverseCorrectness(t *testing.T) {
 	// Test parameters
 	n := uint64(1000)
 	m := uint64(50)
-	
+
 	// Use deterministic keys for reproducible test results
 	prpKey := GenerateDeterministicKeyWithSeed(42)
 	baseKey := GenerateDeterministicKeyWithSeed(24)
-	
+
 	// Create enhanced iPRF
 	iprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
-	
+
 	// Build complete forward mapping
 	forwardMap := make(map[uint64][]uint64)
 	for x := uint64(0); x < n; x++ {
 		y := iprf.Forward(x)
 		forwardMap[y] = append(forwardMap[y], x)
 	}
-	
+
 	// Test that inverse matches forward mapping
 	for y := uint64(0); y < m; y++ {
 		expectedPreimages := forwardMap[y]
 		actualPreimages := iprf.Inverse(y)
-		
+
 		if len(expectedPreimages) != len(actualPreimages) {
-			t.Errorf("Inverse(%d) length mismatch: expected %d, got %d", 
+			t.Errorf("Inverse(%d) length mismatch: expected %d, got %d",
 				y, len(expectedPreimages), len(actualPreimages))
 			continue
 		}
-		
+
 		// Sort both slices for comparison
 		sort.Slice(expectedPreimages, func(i, j int) bool {
 			return expectedPreimages[i] < expectedPreimages[j]
@@ -129,10 +129,10 @@ func TestIPRFInverseCorrectness(t *testing.T) {
 		sort.Slice(actualPreimages, func(i, j int) bool {
 			return actualPreimages[i] < actualPreimages[j]
 		})
-		
+
 		for i := range expectedPreimages {
 			if expectedPreimages[i] != actualPreimages[i] {
-				t.Errorf("Inverse(%d)[%d] = %d, expected %d", 
+				t.Errorf("Inverse(%d)[%d] = %d, expected %d",
 					y, i, actualPreimages[i], expectedPreimages[i])
 			}
 		}
@@ -144,16 +144,16 @@ func TestIPRFDeterminism(t *testing.T) {
 	// Test parameters
 	n := uint64(1000)
 	m := uint64(100)
-	
+
 	// Create keys
 	var prpKey, baseKey PrfKey128
 	rand.Read(prpKey[:])
 	rand.Read(baseKey[:])
-	
+
 	// Create two instances with same keys
 	iprf1 := NewEnhancedIPRF(prpKey, baseKey, n, m)
 	iprf2 := NewEnhancedIPRF(prpKey, baseKey, n, m)
-	
+
 	// Test that both instances produce identical results
 	for x := uint64(0); x < 100; x++ {
 		y1 := iprf1.Forward(x)
@@ -161,14 +161,14 @@ func TestIPRFDeterminism(t *testing.T) {
 		if y1 != y2 {
 			t.Errorf("Forward(%d) non-deterministic: %d vs %d", x, y1, y2)
 		}
-		
+
 		inv1 := iprf1.Inverse(y1)
 		inv2 := iprf2.Inverse(y2)
 		if len(inv1) != len(inv2) {
 			t.Errorf("Inverse(%d) non-deterministic: different lengths", y1)
 			continue
 		}
-		
+
 		for i := range inv1 {
 			if inv1[i] != inv2[i] {
 				t.Errorf("Inverse(%d)[%d] non-deterministic: %d vs %d", y1, i, inv1[i], inv2[i])
@@ -181,13 +181,13 @@ func TestIPRFDeterminism(t *testing.T) {
 func TestPRPPermutation(t *testing.T) {
 	// Test parameters
 	n := uint64(256) // Small domain for exhaustive testing
-	
+
 	// Create random key
 	var key PrfKey128
 	rand.Read(key[:])
-	
+
 	prp := NewPRP(key)
-	
+
 	// Build forward mapping
 	forward := make(map[uint64]uint64)
 	for x := uint64(0); x < n; x++ {
@@ -200,7 +200,7 @@ func TestPRPPermutation(t *testing.T) {
 		}
 		forward[x] = y
 	}
-	
+
 	// Check that it's a bijection (no collisions in output)
 	outputSet := make(map[uint64]bool)
 	for x := uint64(0); x < n; x++ {
@@ -210,7 +210,7 @@ func TestPRPPermutation(t *testing.T) {
 		}
 		outputSet[y] = true
 	}
-	
+
 	// Test inverse permutation
 	for x := uint64(0); x < n; x++ {
 		y := prp.Permute(x, n)
@@ -226,15 +226,15 @@ func TestPerformance(t *testing.T) {
 	// Test parameters matching our deployment
 	n := uint64(8_400_000) // 8.4M accounts
 	m := uint64(1_024)     // 1K hint sets
-	
+
 	// Create random keys
 	var prpKey, baseKey PrfKey128
 	rand.Read(prpKey[:])
 	rand.Read(baseKey[:])
-	
+
 	// Create enhanced iPRF
 	iprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
-	
+
 	// Benchmark forward evaluation
 	t.Run("Forward", func(t *testing.T) {
 		// FIX #5: Pre-warm TablePRP before measurement
@@ -250,13 +250,13 @@ func TestPerformance(t *testing.T) {
 		elapsed := time.Since(start)
 		perOp := elapsed / time.Duration(iterations)
 		t.Logf("Forward (steady-state): %v per operation", perOp)
-		
+
 		// Should be Õ(1) = microseconds
 		if perOp > 100*time.Microsecond {
 			t.Errorf("Forward too slow: %v (expected microseconds)", perOp)
 		}
 	})
-	
+
 	// Benchmark inverse evaluation
 	t.Run("Inverse", func(t *testing.T) {
 		iterations := 100
@@ -266,9 +266,9 @@ func TestPerformance(t *testing.T) {
 		}
 		elapsed := time.Since(start)
 		perOp := elapsed / time.Duration(iterations)
-		t.Logf("Inverse: %v per operation (avg preimage size: %.1f)", 
+		t.Logf("Inverse: %v per operation (avg preimage size: %.1f)",
 			perOp, float64(iprf.GetPreimageSize()))
-		
+
 		// Should be Õ(preimage_size) = Õ(n/m)
 		expectedPreimageSize := float64(n) / float64(m)
 		maxTime := time.Duration(expectedPreimageSize) * 10 * time.Microsecond
@@ -391,7 +391,7 @@ func TestIntegration(t *testing.T) {
 	// Test that the new enhanced iPRF can replace the old one
 	n := uint64(8_400_000) // 8.4M accounts
 	m := uint64(1_024)     // 1K hint sets
-	
+
 	// Create keys (deterministic for reproducibility)
 	prpKey := GenerateDeterministicKey()
 	baseKey := GenerateDeterministicKey()
@@ -400,11 +400,11 @@ func TestIntegration(t *testing.T) {
 		prpKey[i] = byte(i)
 		baseKey[i] = byte(i + 16)
 	}
-	
+
 	// Create both old and new iPRFs
 	oldIprf := NewIPRF(baseKey, n, m)
 	newIprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
-	
+
 	// Test that they behave differently (enhanced version adds PRP layer)
 	sameCount := 0
 	testInputs := 100
@@ -416,18 +416,18 @@ func TestIntegration(t *testing.T) {
 			sameCount++
 		}
 	}
-	
+
 	// They should be different most of the time due to PRP layer
 	if sameCount > testInputs/2 {
-		t.Errorf("Old and new iPRF produce same results too often: %d/%d", 
+		t.Errorf("Old and new iPRF produce same results too often: %d/%d",
 			sameCount, testInputs)
 	}
-	
+
 	// Test that new iPRF has working inverse
 	x := uint64(12345)
 	y := newIprf.Forward(x)
 	preimages := newIprf.Inverse(y)
-	
+
 	found := false
 	for _, preimage := range preimages {
 		if preimage == x {
@@ -438,6 +438,6 @@ func TestIntegration(t *testing.T) {
 	if !found {
 		t.Errorf("Enhanced iPRF inverse failed for x=%d, y=%d", x, y)
 	}
-	
+
 	t.Logf("Integration test passed: Enhanced iPRF ready for production use")
 }

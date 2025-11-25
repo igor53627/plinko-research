@@ -154,9 +154,9 @@ func TestPRPPerformanceReasonable(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name       string
-		n          uint64
-		maxTimeMs  int64
+		name      string
+		n         uint64
+		maxTimeMs int64
 	}{
 		{"small n=1K", 1000, 100},
 		{"medium n=10K", 10000, 500},
@@ -173,7 +173,7 @@ func TestPRPPerformanceReasonable(t *testing.T) {
 			// Test inverse performance for several random values
 			testCount := 10
 			for i := 0; i < testCount; i++ {
-				y := uint64(i * 1000) % tc.n
+				y := uint64(i*1000) % tc.n
 
 				// Measure inverse time
 				x := prp.InversePermute(y, tc.n)

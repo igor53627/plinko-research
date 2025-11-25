@@ -342,13 +342,13 @@ func TestTablePRPMemoryFootprint(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		domain          uint64
-		maxMemoryMB     float64
+		name                  string
+		domain                uint64
+		maxMemoryMB           float64
 		maxMemoryPerElemBytes float64
 	}{
-		{"n=1M", 1_000_000, 20, 20},      // ~16 MB expected
-		{"n=8.4M", 8_400_000, 150, 18},   // ~134 MB expected
+		{"n=1M", 1_000_000, 20, 20},    // ~16 MB expected
+		{"n=8.4M", 8_400_000, 150, 18}, // ~134 MB expected
 	}
 
 	for _, tc := range testCases {

@@ -40,6 +40,7 @@ func NewIPRF(key PrfKey128, n uint64, m uint64) *IPRF {
 		treeDepth: treeDepth,
 	}
 }
+
 // GenerateRandomKey creates a cryptographically secure random key
 // WARNING: For production use, prefer DeriveIPRFKey for deterministic key derivation
 // Random keys break persistence across server restarts, invalidating cached hints
@@ -84,8 +85,9 @@ func DeriveIPRFKey(masterSecret []byte, context string) PrfKey128 {
 // Use this instead of NewIPRF(GenerateRandomKey(), ...) for production deployments
 //
 // Example usage:
-//   masterSecret := loadMasterSecret("/etc/app/master.key")
-//   iprf := NewIPRFFromMasterSecret(masterSecret, "plinko-iprf-v1", 8400000, 1024)
+//
+//	masterSecret := loadMasterSecret("/etc/app/master.key")
+//	iprf := NewIPRFFromMasterSecret(masterSecret, "plinko-iprf-v1", 8400000, 1024)
 func NewIPRFFromMasterSecret(masterSecret []byte, context string, domain uint64, range_ uint64) *IPRF {
 	key := DeriveIPRFKey(masterSecret, context)
 	return NewIPRF(key, domain, range_)
@@ -181,9 +183,10 @@ func (iprf *IPRF) sampleBinomial(nodeID uint64, n uint64, p float64) uint64 {
 // binomialInverseCDF computes inverse CDF of Binomial(n, p) at point u
 //
 // Edge cases:
-//   u <= 0.0 → returns 0 (no balls)
-//   u >= 1.0 → returns n (all balls)
-//   0 < u < 1 → returns k such that P(X ≤ k) ≥ u and P(X ≤ k-1) < u
+//
+//	u <= 0.0 → returns 0 (no balls)
+//	u >= 1.0 → returns n (all balls)
+//	0 < u < 1 → returns k such that P(X ≤ k) ≥ u and P(X ≤ k-1) < u
 func (iprf *IPRF) binomialInverseCDF(n uint64, p float64, u float64) uint64 {
 	// Handle u edge cases first (FIX #2: u=1.0 should return n)
 	if u <= 0.0 {

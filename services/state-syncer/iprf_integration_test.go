@@ -128,7 +128,7 @@ func TestSystemIntegration(t *testing.T) {
 
 	// Realistic parameters from the paper
 	dbSize := uint64(8_400_000) // 8.4M accounts
-	setSize := uint64(1_024)     // 1K hint sets
+	setSize := uint64(1_024)    // 1K hint sets
 
 	eiprf := NewEnhancedIPRF(prpKey, baseKey, dbSize, setSize)
 	_ = prpKey // Use variable to avoid "declared and not used" error

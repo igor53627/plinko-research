@@ -45,7 +45,7 @@ func (iprf *IPRF) OptimizedInverse(y uint64) []uint64 {
 	if y >= iprf.range_ {
 		return []uint64{}
 	}
-	
+
 	// Use the tree-based O(log n) implementation
 	// This builds the complete tree and finds all paths that lead to the target bin
 	return iprf.TreeInverse(y)
@@ -57,7 +57,7 @@ func (iprf *IPRF) findAllPreimages(targetBin uint64, domainSize uint64, rangeSiz
 	if targetBin >= rangeSize {
 		return []uint64{}
 	}
-	
+
 	// Use tree-based approach that mirrors the forward function
 	// We traverse the same tree structure but collect all paths that lead to targetBin
 	return iprf.collectPreimagesTree(targetBin, 0, rangeSize-1, domainSize, 0, domainSize-1)
@@ -70,11 +70,11 @@ func (iprf *IPRF) collectPreimagesTree(
 	lowBin uint64, highBin uint64,
 	totalBalls uint64,
 	startIdx uint64, endIdx uint64) []uint64 {
-	
+
 	if startIdx > endIdx {
 		return []uint64{}
 	}
-	
+
 	if lowBin == highBin {
 		// Leaf node - if this is our target bin, all indices in this range map to it
 		if lowBin == targetBin {
@@ -86,32 +86,32 @@ func (iprf *IPRF) collectPreimagesTree(
 		}
 		return []uint64{}
 	}
-	
+
 	// Binary tree traversal - same logic as traceBall but in reverse
 	midBin := (lowBin + highBin) / 2
 	leftBins := midBin - lowBin + 1
 	totalBins := highBin - lowBin + 1
 	p := float64(leftBins) / float64(totalBins)
-	
+
 	// Sample the binomial split point for this node
 	nodeID := encodeNode(lowBin, highBin, totalBalls)
 	leftCount := iprf.sampleBinomial(nodeID, totalBalls, p)
-	
+
 	// Determine the split point in the current range
 	splitPoint := startIdx + leftCount
 	if splitPoint > endIdx+1 {
 		splitPoint = endIdx + 1
 	}
-	
+
 	var result []uint64
-	
+
 	// Check both subtrees
 	if targetBin <= midBin {
 		// Target is in left subtree
 		leftResult := iprf.collectPreimagesTree(targetBin, lowBin, midBin, leftCount, startIdx, splitPoint-1)
 		result = append(result, leftResult...)
 	}
-	
+
 	if targetBin > midBin {
 		// Target is in right subtree
 		rightStart := splitPoint
@@ -119,11 +119,11 @@ func (iprf *IPRF) collectPreimagesTree(
 		rightBalls := totalBalls - leftCount
 		rightLow := midBin + 1
 		rightHigh := highBin
-		
+
 		rightResult := iprf.collectPreimagesTree(targetBin, rightLow, rightHigh, rightBalls, rightStart, rightEnd)
 		result = append(result, rightResult...)
 	}
-	
+
 	return result
 }
 
@@ -132,28 +132,28 @@ func (iprf *IPRF) TreeInverse(y uint64) []uint64 {
 	if y >= iprf.range_ {
 		return []uint64{}
 	}
-	
+
 	// Build a tree representation and find all paths that lead to target bin
 	paths := iprf.findPathsToBin(y, iprf.domain, iprf.range_)
-	
+
 	// Convert paths to actual indices
 	var result []uint64
 	for _, path := range paths {
 		indices := iprf.pathToIndices(path, iprf.domain, iprf.range_)
 		result = append(result, indices...)
 	}
-	
+
 	sort.Slice(result, func(i, j int) bool {
 		return result[i] < result[j]
 	})
-	
+
 	return result
 }
 
 type treePath struct {
-	low, high uint64
+	low, high        uint64
 	startIdx, endIdx uint64
-	n uint64
+	n                uint64
 }
 
 func (iprf *IPRF) findPathsToBin(targetBin uint64, n uint64, m uint64) []treePath {
@@ -168,11 +168,11 @@ func (iprf *IPRF) findPathsRecursive(
 	n uint64,
 	startIdx uint64, endIdx uint64,
 	paths *[]treePath) {
-	
+
 	if startIdx > endIdx {
 		return
 	}
-	
+
 	if low == high {
 		// Found a leaf node that contains our target bin
 		*paths = append(*paths, treePath{
@@ -182,22 +182,22 @@ func (iprf *IPRF) findPathsRecursive(
 		})
 		return
 	}
-	
+
 	mid := (low + high) / 2
 	leftBins := mid - low + 1
 	totalBins := high - low + 1
 	p := float64(leftBins) / float64(totalBins)
-	
+
 	// Sample the binomial split point for this node
 	nodeID := encodeNode(low, high, n)
 	leftCount := iprf.sampleBinomial(nodeID, n, p)
-	
+
 	// Determine the split point in the current range
 	splitPoint := startIdx + leftCount
 	if splitPoint > endIdx+1 {
 		splitPoint = endIdx + 1
 	}
-	
+
 	// Recurse on appropriate subtree
 	if targetBin <= mid {
 		// Target is in left subtree
