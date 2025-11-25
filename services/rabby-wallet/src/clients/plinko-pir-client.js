@@ -165,12 +165,14 @@ export class PlinkoPIRClient {
             }
         }
 
-        if (i % 1000 === 0) {
+        if (i % 10000 === 0) {
             const now = Date.now();
-            if (now - lastLog > 500) {
+            if (now - lastLog > 200) {
                 const pct = (i / totalEntries) * 100;
                 if (onProgress) onProgress('hint_generation', pct);
                 lastLog = now;
+                // Yield to event loop to allow UI updates
+                await new Promise(r => setTimeout(r, 0));
             }
         }
     }
