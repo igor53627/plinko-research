@@ -48,11 +48,7 @@ func main() {
 	baseDB := make([]uint64, totalEntries)
 
 	pm := NewPlinkoUpdateManager(database, *dbSizeFlag, chunkSize, setSize)
-	if *enableCache {
-		fmt.Println("⚙️  Building cache...")
-		cacheDur := pm.EnableCacheMode()
-		fmt.Printf("✅ Cache ready in %v\n", cacheDur)
-	}
+	_ = *enableCache // Cache mode removed - iPRF is client-side only
 
 	dbUpdates := make([]DBUpdate, len(entries))
 	for i, entry := range entries {

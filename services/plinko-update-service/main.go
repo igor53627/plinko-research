@@ -94,15 +94,6 @@ func main() {
 	log.Println("Initializing Plinko Update Manager...")
 	pm := NewPlinkoUpdateManager(database, dbSize, chunkSize, setSize)
 
-	// Enable cache mode
-	if CacheEnabled {
-		log.Println("Building update cache...")
-		cacheDuration := pm.EnableCacheMode()
-		cacheMB := float64(dbSize*DBEntrySize) / 1024 / 1024
-		log.Printf("✅ Cache mode enabled in %v (memory: %.1f MB)\n", cacheDuration, cacheMB)
-		log.Println()
-	}
-
 	// Create delta directory
 	if err := os.MkdirAll(cfg.DeltaOutputDir, 0o755); err != nil {
 		log.Fatalf("Failed to create delta directory: %v", err)
@@ -415,7 +406,7 @@ func (s *PlinkoUpdateService) readDBEntry(index uint64) DBEntry {
 	return entry
 }
 
-func saveDelta(path string, deltas []HintDelta) error {
+func saveDelta(path string, deltas []PublishedDelta) error {
 	// Create a temporary file in the same directory
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, "delta-*.tmp")
@@ -446,14 +437,14 @@ func saveDelta(path string, deltas []HintDelta) error {
 	}
 
 	// Write each delta
-	// Format: [8 bytes HintSetID] [8 bytes IsBackupSet] [32 bytes Delta]
+	// Format: [8 bytes Index] [32 bytes Delta]
+	// Client uses their local iPRF to determine which hints to update
 	for _, delta := range deltas {
-		var entry [48]byte
-		binary.LittleEndian.PutUint64(entry[0:8], delta.HintSetID)
-		binary.LittleEndian.PutUint64(entry[8:16], boolToUint64(delta.IsBackupSet))
+		var entry [40]byte
+		binary.LittleEndian.PutUint64(entry[0:8], delta.Index)
 
 		for i := 0; i < DBEntryLength; i++ {
-			binary.LittleEndian.PutUint64(entry[16+i*8:24+i*8], delta.Delta[i])
+			binary.LittleEndian.PutUint64(entry[8+i*8:16+i*8], delta.Delta[i])
 		}
 
 		if _, err = f.Write(entry[:]); err != nil {
