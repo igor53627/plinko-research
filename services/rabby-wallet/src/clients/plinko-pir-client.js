@@ -606,10 +606,20 @@ export class PlinkoPIRClient {
     
     // Get local hint value
     const hintVal = this.readHint(selectedHintIdx);
-    const balance = hintVal ^ r0;
+    const rawBalance = hintVal ^ r0;
 
-    // Calculate delta for visualization
-    const delta = hintVal ^ r0;
+    // Balance is stored as 64-bit in the dataset - extract lower 64 bits
+    const balance = rawBalance & ((1n << 64n) - 1n);
+
+    // Check if the full 256-bit XOR result has upper bits set (indicates potential mismatch or saturation)
+    const saturated = rawBalance !== balance;
+
+    if (saturated) {
+      console.warn(`⚠️ Balance overflow detected: raw=${rawBalance}, masked=${balance}`);
+    }
+
+    // Calculate delta for visualization (should be 0 if hint is synchronized)
+    const delta = rawBalance;
 
     // Generate a sample of the PRF key (first 8 bytes of hint index as visualization)
     const prfKeyBytes = [];
@@ -624,6 +634,7 @@ export class PlinkoPIRClient {
 
     return {
         balance: balance,
+        saturated: saturated,
         visualization: {
             // Original fields
             hintIdx: selectedHintIdx,
@@ -640,9 +651,10 @@ export class PlinkoPIRClient {
             targetChunk: alpha,
             serverParity: r0.toString(),
             hintParity: hintVal.toString(),
-            delta: (balance === 0n ? '0' : balance.toString()),
-            hintValue: hintVal.toString(),
-            dbSize: chunkSize * setSize
+            delta: (delta === 0n ? '0' : delta.toString()),
+            hintValue: balance.toString(), // Use masked balance
+            dbSize: chunkSize * setSize,
+            saturated: saturated
         }
     };
   }
