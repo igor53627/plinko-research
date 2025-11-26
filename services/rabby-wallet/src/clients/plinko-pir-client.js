@@ -593,10 +593,13 @@ export class PlinkoPIRClient {
 
   buildSnapshotUrls(fileEntry) {
     const candidates = [];
-    if (fileEntry?.ipfs?.gateway_url) candidates.push(fileEntry.ipfs.gateway_url);
-    if (fileEntry?.ipfs?.cid) candidates.push(`${this.cdnUrl}/ipfs/${fileEntry.ipfs.cid}`);
+    // Direct CDN path first (most reliable)
     const snapshotPath = `snapshots/${this.snapshotVersion}/${fileEntry.path}`;
     candidates.push(`${this.cdnUrl}/${snapshotPath}`);
+    // IPFS fallbacks
+    if (fileEntry?.ipfs?.gateway_url) candidates.push(fileEntry.ipfs.gateway_url);
+    if (fileEntry?.ipfs?.cid) candidates.push(`${this.cdnUrl}/ipfs/${fileEntry.ipfs.cid}`);
+    log(`📋 Snapshot URL candidates: ${candidates.join(', ')}`);
     return [...new Set(candidates.filter(Boolean))];
   }
 
