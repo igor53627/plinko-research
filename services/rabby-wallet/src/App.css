@@ -372,3 +372,17 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Version Badge */
+.version-badge {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(45, 45, 50, 0.9);
+  color: #888;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  border: 1px solid #3a3a40;
+}
