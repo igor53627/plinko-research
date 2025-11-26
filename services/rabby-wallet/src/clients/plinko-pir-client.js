@@ -540,6 +540,10 @@ export class PlinkoPIRClient {
     };
   }
   
+  getHintSize() {
+    return this.hints ? this.hints.byteLength : 0;
+  }
+
   isBlockInP(hintIdx, blockIdx) {
       // MurmurHash3 64-bit finalizer mixing function for better distribution
       let h = BigInt(hintIdx) ^ (BigInt(blockIdx) << 32n);

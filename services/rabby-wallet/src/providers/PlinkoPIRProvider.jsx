@@ -72,6 +72,9 @@ export const PlinkoPIRProvider = ({ children }) => {
         const startTime = performance.now();
 
         await pirClient.downloadHint((stage, percent) => {
+          if (stage === 'hint_generation' && percent === 0) {
+            window._hintGenStart = Date.now();
+          }
           setDownloadProgress({ stage, percent });
         });
 

@@ -39,9 +39,9 @@ export const PrivacyMode = () => {
                   ></div>
                 </div>
                 <p className="progress-text">
-                  {downloadProgress.stage === 'database' && `Downloading Database (${downloadProgress.percent}%)`}
-                  {downloadProgress.stage === 'address_mapping' && `Downloading Address Map (${downloadProgress.percent}%)`}
-                  {downloadProgress.stage === 'hint_generation' && `Generating Local Hints...`}
+                  {downloadProgress.stage === 'database' && `Downloading Database (${downloadProgress.percent.toFixed(0)}%)`}
+                  {downloadProgress.stage === 'address_mapping' && `Downloading Address Map (${downloadProgress.percent.toFixed(0)}%)`}
+                  {downloadProgress.stage === 'hint_generation' && `Generating Local Hints (${downloadProgress.percent.toFixed(0)}%)${downloadProgress.percent > 0 && downloadProgress.percent < 100 ? ` - ETA: ${Math.round((100 - downloadProgress.percent) / downloadProgress.percent * (Date.now() - (window._hintGenStart || Date.now())) / 1000)}s` : ''}`}
                 </p>
               </div>
             )}
