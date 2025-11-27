@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { PlinkoPIRProvider, usePlinkoPIR } from './providers/PlinkoPIRProvider';
 import { PrivacyMode } from './components/PrivacyMode';
+import { APP_VERSION } from './main.jsx';
 import './App.css';
 
 function WalletDemo() {
@@ -267,6 +268,10 @@ function WalletDemo() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="version-badge">
+        v{APP_VERSION}
       </div>
     </div>
   );

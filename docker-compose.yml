@@ -151,7 +151,9 @@ services:
     volumes:
       - ipfs-data:/data/ipfs
     ports:
-      - "5001:5001"  # API (HTTP) for local tooling; gateway left internal
+      - "5001:5001"  # API (HTTP) for local tooling
+    expose:
+      - "8080"  # Gateway port for internal Docker network access (cdn-mock proxies to this)
     networks:
       - plinko-network
 
