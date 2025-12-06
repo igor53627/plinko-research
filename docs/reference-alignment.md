@@ -132,6 +132,37 @@ deriveBlockKey(masterKey, blockIdx) {
 
 ## Security Considerations
 
+### Privacy-Preserving Delta Updates
+
+**Key insight**: Clients apply deltas locally using their private iPRF keys, so the server never learns which hints a client has.
+
+```
+┌─────────────────┐                           ┌─────────────────┐
+│     Server      │                           │     Client      │
+│                 │   publishes (idx, delta)  │                 │
+│  state-syncer   │ ─────────────────────────►│  plinko-hints   │
+│                 │                           │                 │
+│  NO hint info!  │                           │  Private keys:  │
+│  Just raw XOR   │                           │  keys[α].inverse(β)
+│                 │                           │  → finds hints  │
+└─────────────────┘                           └─────────────────┘
+```
+
+**Delta format** (40 bytes each):
+- `index` (8 bytes): Database entry that changed
+- `delta` (32 bytes): XOR of old ⊕ new value
+
+**Client-side processing** (`updateHint(i, delta)`):
+1. Compute block index `α = floor(i / w)` and offset `β = i % w`
+2. Use private iPRF key to find affected hints: `keys[α].inverse(β)`
+3. XOR delta into each affected hint's parity
+
+**Why this preserves privacy**:
+- Server publishes identical deltas to all clients
+- Each client has unique iPRF keys (derived from their master key)
+- The same database index maps to **different hint sets** for each client
+- Server cannot learn which entries any client is interested in
+
 ### Privacy-Preserving Shuffle
 
 The `getHint()` method shuffles candidate hints using `crypto.getRandomValues()` (not `Math.random()`) to prevent timing-based leakage of which hint was selected.

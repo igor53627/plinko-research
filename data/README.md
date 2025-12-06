@@ -60,6 +60,18 @@ head -c 384000000 database_full.bin > database.bin
 head -c 72000000 account-mapping.bin > account-mapping.bin
 ```
 
+## Delta Updates
+
+When the database changes, the state-syncer publishes raw deltas:
+
+```
+Delta format (40 bytes each):
+├── index (8 bytes): Database entry that changed
+└── delta (32 bytes): XOR of old ⊕ new value
+```
+
+**Privacy**: Clients apply deltas locally using their private iPRF keys. The server publishes identical deltas to all clients and never learns which hints any client has. See [docs/reference-alignment.md](../docs/reference-alignment.md#privacy-preserving-delta-updates).
+
 ## Usage
 
 ```bash
