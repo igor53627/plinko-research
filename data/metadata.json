@@ -1,0 +1,8 @@
+{
+  "block": 23889314,
+  "accounts": 3000000,
+  "storage_slots": 3000000,
+  "total_indices": 12000000,
+  "source": "10% slice of plinko-extractor regression-test-data",
+  "generated_at": "2025-12-06"
+}
