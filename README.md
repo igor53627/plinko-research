@@ -192,6 +192,7 @@ MIT License - see [LICENSE](LICENSE) file
 
 - **GitHub**: https://github.com/igor53627/plinko-pir-research
 - **Plinko Paper**: https://eprint.iacr.org/2024/318
+- **Vitalik's Plinko Tutorial**: https://vitalik.eth.limo/general/2025/11/25/plinko.html
 - **Issues**: https://github.com/igor53627/plinko-pir-research/issues
 
 ---
