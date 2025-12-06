@@ -8,9 +8,10 @@ Plinko is a single-server Private Information Retrieval (PIR) protocol with effi
 
 **Key Features:**
 - **Privacy-Preserving**: Query blockchain state without revealing query contents
+- **Private Delta Updates**: Clients apply updates locally using private iPRF keys—server never learns which hints a client has
 - **High Performance**: O(log m + k) query complexity with iPRF inverse (m = range size, k = result set size)
 - **Efficient Updates**: Incremental state updates without full reconstruction
-- **Multi-Language**: Go (production) and Python (reference) implementations
+- **Real Data**: 10% mainnet slice (3M accounts, 366MB) for realistic testing
 
 ## Quick Start
 
@@ -29,7 +30,7 @@ open http://localhost:5173
 
 **What you get:**
 - Rabby wallet fork with "Privacy Mode" toggle
-- 1,000 test accounts with balances
+- 3M real Ethereum accounts (10% mainnet slice from block #23,889,314)
 - Live Plinko PIR decoding visualization
 - Real-time delta updates every 12 seconds
 
@@ -58,6 +59,31 @@ open http://localhost:5173
 | **cdn-mock** | Distributes snapshot packages/deltas + proxies IPFS | Nginx / CloudFlare R2 |
 | **rabby-wallet** | Privacy-enhanced wallet UI | React + Vite |
 | **ipfs** | Local Kubo daemon (pin snapshots) | ipfs/kubo |
+
+## Privacy Model
+
+Plinko achieves privacy through two mechanisms:
+
+### 1. Private Queries
+The client sends a query `(P, offsets)` where P is a random subset of blocks. The server computes XOR parities but cannot determine which specific entry the client wants (it's hidden among ~half the blocks).
+
+### 2. Private Delta Updates
+**Key insight**: The server publishes raw deltas `(index, XOR_value)` to all clients identically. Each client applies deltas locally using their **private iPRF keys**:
+
+```
+Server publishes:  (index=42, delta=0xABC...)
+                         │
+         ┌───────────────┼───────────────┐
+         ▼               ▼               ▼
+      Client A        Client B        Client C
+      keys[α].inverse(β)  →  different hint sets!
+```
+
+- Server learns nothing about which entries clients care about
+- Each client's iPRF keys are unique (derived from their master key)
+- Same database index maps to **different hints** for each client
+
+See [docs/reference-alignment.md](docs/reference-alignment.md) for implementation details.
 
 ## Performance
 
@@ -100,8 +126,18 @@ go test -v ./...
 
 Documentation has been moved to the `plinko-pir-docs` repository.
 
-- **Implementation Details**: Technical deep-dive
-- **State Syncer README**: iPRF implementation details
+- **[Reference Alignment](docs/reference-alignment.md)**: Alignment with Plinko.v Coq specification
+- **[iPRF Optimization](docs/iprf-optimization.md)**: 87x speedup via normal approximation
+- **[Hint Generation](docs/hint-generation-optimization.md)**: Hint generation optimizations
+- **[Query Compression](docs/query-compression.md)**: Query size reduction techniques
+
+### Cryptographic Components
+
+| Component | Description | Location |
+|-----------|-------------|----------|
+| **Swap-or-Not PRP** | Morris-Rogaway small-domain PRP | `services/rabby-wallet/src/crypto/swap-or-not-prp.js` |
+| **iPRF v2** | Invertible PRF (PRP + PMNS) | `services/rabby-wallet/src/crypto/iprf-v2.js` |
+| **Plinko Hints** | Full hint lifecycle management | `services/rabby-wallet/src/crypto/plinko-hints.js` |
 
 ## Research Paper
 
@@ -129,16 +165,21 @@ make clean                  # tear down containers + volumes
 
 See the Deployment Guide in the documentation repository for the fully scripted Vultr deployment workflow powered by `scripts/vultr-deploy.sh`.
 
-### Preparing Canonical Database
+### Database
 
-Production datasets arrive as Parquet diffs. Convert them into `database.bin` + `address-mapping.bin`:
+The repository includes a 10% slice of real Ethereum mainnet state:
 
+| File | Size | Description |
+|------|------|-------------|
+| `data/database.bin` | 366 MB | 12M entries (3M accounts × 3 words + 3M storage slots) |
+| `data/account-mapping.bin` | 69 MB | Address → index lookup (3M accounts) |
+| `data/metadata.json` | ~200 B | Block #23,889,314 extraction metadata |
+
+See [data/README.md](data/README.md) for entry layout and usage.
+
+**For full mainnet database**, use [plinko-extractor](https://github.com/igor53627/plinko-extractor):
 ```bash
-# 1. Copy raw diffs from reth-onion-dev
-rsync -avz reth-onion-dev:~/plinko-balances/balance_diffs_blocks-*.parquet raw_balances/
-
-# 2. Build the artifacts (writes into ./data/)
-python3 scripts/build_database_from_parquet.py --input raw_balances --output data
+plinko-extractor --db-path /path/to/reth/db --output-dir ./data
 ```
 
 ## Development
@@ -182,6 +223,7 @@ MIT License - see [LICENSE](LICENSE) file
 
 - **GitHub**: https://github.com/igor53627/plinko-pir-research
 - **Plinko Paper**: https://eprint.iacr.org/2024/318
+- **Vitalik's Plinko Tutorial**: https://vitalik.eth.limo/general/2025/11/25/plinko.html
 - **Issues**: https://github.com/igor53627/plinko-pir-research/issues
 
 ---

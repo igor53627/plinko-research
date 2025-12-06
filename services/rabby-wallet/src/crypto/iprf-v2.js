@@ -1,5 +1,18 @@
 import { FastAes128 } from './aes128-fast.js';
+import { SwapOrNotPRP } from './swap-or-not-prp.js';
 
+/**
+ * Invertible PRF (iPRF) v2 - Aligned with Plinko.v reference implementation
+ * 
+ * Built from Swap-or-Not PRP + PMNS:
+ * - Forward: iF.F(k, x) = S(k_pmns, P(k_prp, x))
+ * - Inverse: iF.F^{-1}(k, y) = {P^{-1}(k_prp, z) : z ∈ S^{-1}(k_pmns, y)}
+ * 
+ * Security follows from:
+ * 1. Swap-or-Not provides a secure small-domain PRP (Morris-Rogaway 2013)
+ * 2. PMNS simulates the preimage-size distribution of a random function
+ * 3. Composition yields an iPRF indistinguishable from a random function
+ */
 export class IPRF {
   constructor(key, n, m) {
     if (key.length !== 32) throw new Error("IPRF key must be 32 bytes");
@@ -7,7 +20,7 @@ export class IPRF {
     const key1 = key.slice(0, 16);
     const key2 = key.slice(16, 32);
     
-    this.prp = new FeistelPRP(key1, n);
+    this.prp = new SwapOrNotPRP(key1, n);
     this.pmns = new PMNS(key2, n, m);
   }
 
@@ -30,102 +43,21 @@ export class IPRF {
   }
 }
 
-class FeistelPRP {
-  constructor(key, n) {
-    this.block = new FastAes128(key);
-    this.n = BigInt(n);
-    
-    let bits = 0;
-    let p2 = 1n;
-    while (p2 < this.n) {
-      p2 <<= 1n;
-      bits++;
-    }
-    if (bits % 2 !== 0) bits++;
-    if (bits < 2) bits = 2;
-    
-    this.bits = bits;
-  }
-
-  permute(x) {
-    x = BigInt(x);
-    if (x >= this.n) return x;
-
-    while (true) {
-      x = this.feistelEncrypt(x);
-      if (x < this.n) return x;
-    }
-  }
-
-  inverse(y) {
-    y = BigInt(y);
-    if (y >= this.n) return y;
-
-    while (true) {
-      y = this.feistelDecrypt(y);
-      if (y < this.n) return y;
-    }
-  }
-
-  feistelEncrypt(val) {
-    const halfBits = BigInt(this.bits / 2);
-    const lowerMask = (1n << halfBits) - 1n;
-    
-    let left = (val >> halfBits) & lowerMask;
-    let right = val & lowerMask;
-
-    for (let i = 0; i < 4; i++) {
-      const tmp = right;
-      const f = this.roundFunc(i, right);
-      right = left ^ (f & lowerMask);
-      left = tmp;
-    }
-    
-    return (left << halfBits) | right;
-  }
-
-  feistelDecrypt(val) {
-    const halfBits = BigInt(this.bits / 2);
-    const lowerMask = (1n << halfBits) - 1n;
-    
-    let left = (val >> halfBits) & lowerMask;
-    let right = val & lowerMask;
-
-    for (let i = 3; i >= 0; i--) {
-      const tmp = left;
-      const f = this.roundFunc(i, left);
-      left = right ^ (f & lowerMask);
-      right = tmp;
-    }
-    
-    return (left << halfBits) | right;
-  }
-
-  roundFunc(round, input) {
-    const data = new Uint8Array(16);
-    const view = new DataView(data.buffer);
-    
-    // Little endian put uint64
-    view.setBigUint64(0, input, true);
-    view.setBigUint64(8, BigInt(round), true);
-    
-    const out = new Uint8Array(16);
-    this.block.encryptBlock(data, out);
-    
-    const outView = new DataView(out.buffer);
-    return outView.getBigUint64(0, true);
-  }
-}
-
+/**
+ * PMNS (Pseudorandom Multinomial Sampler)
+ * 
+ * Binary tree sampling that simulates throwing n balls into m bins.
+ * Named after the Plinko game where balls bounce left/right at pegs.
+ * 
+ * Complexity: O(log m) for both forward and inverse
+ */
 class PMNS {
   constructor(key, n, m) {
     if (n <= 0 || m <= 0) throw new Error("PMNS requires n > 0 and m > 0");
     
-    // Check power of 2 for m
-    // BigInt checks: (m & (m-1)) === 0
     const mBig = BigInt(m);
     if ((mBig & (mBig - 1n)) !== 0n) {
-        throw new Error("PMNS currently assumes m is a power of two for Plinko parameters");
+      throw new Error("PMNS currently assumes m is a power of two for Plinko parameters");
     }
 
     this.block = new FastAes128(key);
@@ -176,9 +108,7 @@ class PMNS {
     const leftBins = mid - node.low + 1n;
     const totalBins = node.high - node.low + 1n;
     
-    // leftBins/totalBins is always 0.5 for power of 2 m
     const p = Number(leftBins) / Number(totalBins);
-    
     const leftCount = this.sampleBinomial(node.count, p, node.low, node.high);
     
     const left = {
@@ -203,24 +133,19 @@ class PMNS {
     
     const nNum = Number(n);
     
-    // For large n, use normal approximation (O(1) instead of O(n))
-    // Binomial(n, p) ≈ Normal(np, np(1-p)) for large n
     if (nNum > 100) {
       return this.sampleBinomialNormal(n, p, low, high);
     }
     
-    // For small n, use exact bit counting
     return this.sampleBinomialExact(n, p, low, high);
   }
   
-  // O(1) normal approximation for large n
   sampleBinomialNormal(n, p, low, high) {
     const nNum = Number(n);
     const mean = nNum * p;
     const variance = nNum * p * (1 - p);
     const stddev = Math.sqrt(variance);
     
-    // Generate deterministic random from (low, high) using AES
     const seed = new Uint8Array(16);
     const seedView = new DataView(seed.buffer);
     seedView.setBigUint64(0, low, true);
@@ -229,24 +154,18 @@ class PMNS {
     const output = new Uint8Array(16);
     this.block.encryptBlock(seed, output);
     
-    // Convert to uniform [0, 1) using first 8 bytes
     const outView = new DataView(output.buffer);
     const u1 = (outView.getUint32(0, true) >>> 0) / 4294967296;
     const u2 = (outView.getUint32(4, true) >>> 0) / 4294967296;
     
-    // Box-Muller transform for standard normal
     const z = Math.sqrt(-2 * Math.log(u1 + 1e-10)) * Math.cos(2 * Math.PI * u2);
     
-    // Transform to binomial approximation
     let result = Math.round(mean + stddev * z);
-    
-    // Clamp to valid range [0, n]
     result = Math.max(0, Math.min(nNum, result));
     
     return BigInt(result);
   }
   
-  // O(n) exact sampling for small n
   sampleBinomialExact(n, p, low, high) {
     const seed = new Uint8Array(16);
     const seedView = new DataView(seed.buffer);
@@ -258,7 +177,6 @@ class PMNS {
     const inputView = new DataView(input.buffer);
     
     const output = new Uint8Array(16);
-    const outputView = new DataView(output.buffer);
     
     let successes = 0n;
     const isHalf = Math.abs(p - 0.5) < 0.000001;
@@ -281,8 +199,9 @@ class PMNS {
             processed++;
           }
         } else {
+          const outView = new DataView(output.buffer);
           if (i + 4 <= 16) {
-            const rndVal = outputView.getUint32(i, true);
+            const rndVal = outView.getUint32(i, true);
             const rndFloat = rndVal / 4294967296.0;
             if (rndFloat < p) {
               successes++;
@@ -295,5 +214,92 @@ class PMNS {
     }
     
     return successes;
+  }
+}
+
+/**
+ * Deterministic Random Subset Generator
+ * 
+ * Generates a random subset of exactly `size` elements from [0, total-1]
+ * using a PRF for deterministic randomness.
+ * 
+ * Matches Plinko.v random_subset implementation.
+ */
+export class SubsetGenerator {
+  constructor(key) {
+    if (key.length !== 16) throw new Error("SubsetGenerator key must be 16 bytes");
+    this.block = new FastAes128(key);
+  }
+
+  /**
+   * Generate a deterministic random subset of `size` elements from [0, total-1]
+   * @param {number} seed - Seed for this specific subset (e.g., hint index)
+   * @param {number} size - Number of elements to select
+   * @param {number} total - Total number of elements to choose from
+   * @returns {Set<number>} - Set of selected indices
+   */
+  generate(seed, size, total) {
+    if (size > total) throw new Error("Subset size cannot exceed total");
+    if (size === 0) return new Set();
+    
+    const result = new Set();
+    let counter = 0;
+    
+    const input = new Uint8Array(16);
+    const inputView = new DataView(input.buffer);
+    inputView.setBigUint64(8, BigInt(seed), true);
+    
+    const output = new Uint8Array(16);
+    const outputView = new DataView(output.buffer);
+    
+    while (result.size < size) {
+      inputView.setBigUint64(0, BigInt(counter), true);
+      this.block.encryptBlock(input, output);
+      counter++;
+      
+      // Extract up to 4 candidate indices per AES block
+      for (let i = 0; i < 4 && result.size < size; i++) {
+        const raw = outputView.getUint32(i * 4, true);
+        const idx = raw % total;
+        result.add(idx);
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Check if a block index is in the subset for a given hint index
+   * Uses early termination for efficiency (addresses CodeRabbit review)
+   */
+  contains(seed, size, total, blockIdx) {
+    if (size === 0) return false;
+    if (size >= total) return blockIdx < total;
+    
+    const seen = new Set();
+    let counter = 0;
+    
+    const input = new Uint8Array(16);
+    const inputView = new DataView(input.buffer);
+    inputView.setBigUint64(8, BigInt(seed), true);
+    
+    const output = new Uint8Array(16);
+    const outputView = new DataView(output.buffer);
+    
+    while (seen.size < size) {
+      inputView.setBigUint64(0, BigInt(counter), true);
+      this.block.encryptBlock(input, output);
+      counter++;
+      
+      for (let i = 0; i < 4 && seen.size < size; i++) {
+        const raw = outputView.getUint32(i * 4, true);
+        const idx = raw % total;
+        if (!seen.has(idx)) {
+          if (idx === blockIdx) return true;
+          seen.add(idx);
+        }
+      }
+    }
+    return false;
   }
 }
