@@ -366,27 +366,68 @@ func fetchUpdates(ctx context.Context, client *ethclient.Client, chainID *big.In
 
 	results := make([]DBUpdate, 0, len(addresses))
 	for addrHex := range addresses {
-		idx, ok := indexMap[addrHex]
+		accountIdx, ok := indexMap[addrHex]
 		if !ok {
 			continue
 		}
+		// Account layout: [nonce, balance, bytecode_hash] = 3 words
+		// Balance is at accountIdx + 1
+		balanceIdx := accountIdx + 1
+
 		balance, err := client.BalanceAt(ctx, common.HexToAddress(addrHex), new(big.Int).SetUint64(blockNumber))
 		if err != nil {
 			log.Printf("BalanceAt error for %s: %v", addrHex, err)
 			continue
 		}
-		oldValue := DBEntry{db[idx]}
-		newValue := DBEntry{balance.Uint64()}
-		if oldValue[0] == newValue[0] {
+
+		// Read old balance (256-bit = 4 uint64 words)
+		oldValue := readDBEntry(db, balanceIdx)
+
+		// Convert big.Int balance to DBEntry (little-endian 256-bit)
+		newValue := bigIntToDBEntry(balance)
+
+		if oldValue == newValue {
 			continue
 		}
 		results = append(results, DBUpdate{
-			Index:    idx,
+			Index:    balanceIdx,
 			OldValue: oldValue,
 			NewValue: newValue,
 		})
 	}
 	return results
+}
+
+// readDBEntry reads a 256-bit entry from the database at the given index
+func readDBEntry(db []uint64, idx uint64) DBEntry {
+	var entry DBEntry
+	startIdx := idx * DBEntryLength
+	if startIdx+DBEntryLength <= uint64(len(db)) {
+		for i := 0; i < DBEntryLength; i++ {
+			entry[i] = db[startIdx+uint64(i)]
+		}
+	}
+	return entry
+}
+
+// bigIntToDBEntry converts a big.Int to a DBEntry (little-endian 256-bit)
+func bigIntToDBEntry(val *big.Int) DBEntry {
+	var entry DBEntry
+	if val == nil {
+		return entry
+	}
+	// Get bytes in big-endian, pad to 32 bytes
+	bytes := val.Bytes()
+	padded := make([]byte, 32)
+	copy(padded[32-len(bytes):], bytes)
+
+	// Convert to little-endian uint64 words
+	for i := 0; i < 4; i++ {
+		// Read 8 bytes from the end (little-endian word order)
+		offset := 24 - i*8
+		entry[i] = binary.BigEndian.Uint64(padded[offset : offset+8])
+	}
+	return entry
 }
 
 type SnapshotFile struct {
