@@ -1,4 +1,5 @@
 import { IPRF, SubsetGenerator } from './iprf-v2.js';
+import { FastAes128 } from './aes128-fast.js';
 
 /**
  * Plinko Hint Structures - Aligned with Plinko.v Coq implementation
@@ -158,15 +159,28 @@ export class PlinkoClientState {
   }
 
   /**
-   * Derive a block-specific key from master key
+   * Derive a block-specific key from master key using AES-based key derivation
+   * for proper domain separation (addresses CodeRabbit review feedback)
    */
   deriveBlockKey(masterKey, blockIdx) {
+    const input = new Uint8Array(16);
+    const view = new DataView(input.buffer);
+    view.setBigUint64(0, BigInt(blockIdx), true);
+    view.setUint32(8, 0x504C4E4B, true); // "PLNK" domain tag
+    
+    const block = new FastAes128(masterKey.slice(0, 16));
+    const derived1 = new Uint8Array(16);
+    const derived2 = new Uint8Array(16);
+    
+    // Generate two 16-byte blocks for 32-byte key
+    view.setUint32(12, 0, true);
+    block.encryptBlock(input, derived1);
+    view.setUint32(12, 1, true);
+    block.encryptBlock(input, derived2);
+    
     const key = new Uint8Array(32);
-    key.set(masterKey);
-    // XOR block index into first 8 bytes
-    const view = new DataView(key.buffer);
-    const current = view.getBigUint64(0, true);
-    view.setBigUint64(0, current ^ BigInt(blockIdx), true);
+    key.set(derived1, 0);
+    key.set(derived2, 16);
     return key;
   }
 
@@ -245,10 +259,14 @@ export class PlinkoClientState {
     // Find all hint indices that map to this offset
     const candidates = this.keys[alpha].inverse(beta);
     
-    // Shuffle candidates for privacy
+    // Shuffle candidates using crypto RNG for privacy (addresses CodeRabbit review)
     const shuffled = [...candidates].map(x => Number(x));
+    const randomBytes = new Uint8Array(shuffled.length * 4);
+    crypto.getRandomValues(randomBytes);
+    const randomView = new DataView(randomBytes.buffer);
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const randomVal = randomView.getUint32(i * 4, true);
+      const j = randomVal % (i + 1);
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     

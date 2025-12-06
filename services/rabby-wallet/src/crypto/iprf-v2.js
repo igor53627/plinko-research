@@ -270,10 +270,36 @@ export class SubsetGenerator {
 
   /**
    * Check if a block index is in the subset for a given hint index
-   * Uses same logic as generate() but checks a single element
+   * Uses early termination for efficiency (addresses CodeRabbit review)
    */
   contains(seed, size, total, blockIdx) {
-    const subset = this.generate(seed, size, total);
-    return subset.has(blockIdx);
+    if (size === 0) return false;
+    if (size >= total) return blockIdx < total;
+    
+    const seen = new Set();
+    let counter = 0;
+    
+    const input = new Uint8Array(16);
+    const inputView = new DataView(input.buffer);
+    inputView.setBigUint64(8, BigInt(seed), true);
+    
+    const output = new Uint8Array(16);
+    const outputView = new DataView(output.buffer);
+    
+    while (seen.size < size) {
+      inputView.setBigUint64(0, BigInt(counter), true);
+      this.block.encryptBlock(input, output);
+      counter++;
+      
+      for (let i = 0; i < 4 && seen.size < size; i++) {
+        const raw = outputView.getUint32(i * 4, true);
+        const idx = raw % total;
+        if (!seen.has(idx)) {
+          if (idx === blockIdx) return true;
+          seen.add(idx);
+        }
+      }
+    }
+    return false;
   }
 }

@@ -46,7 +46,9 @@ export class SwapOrNotPRP {
   deriveRoundKey(round) {
     const input = new Uint8Array(16);
     const view = new DataView(input.buffer);
-    view.setBigUint64(0, BigInt(round), true);
+    // Domain separation tag 0x00 for round key derivation
+    input[0] = 0x00;
+    view.setUint32(1, round, true);
     view.setBigUint64(8, this.domainSize, true);
     
     const output = new Uint8Array(16);
@@ -66,7 +68,9 @@ export class SwapOrNotPRP {
   prfBit(round, canonical) {
     const input = new Uint8Array(16);
     const view = new DataView(input.buffer);
-    view.setBigUint64(0, BigInt(round), true);
+    // Domain separation tag 0x01 for PRF bit evaluation
+    input[0] = 0x01;
+    view.setUint32(1, round, true);
     view.setBigUint64(8, canonical, true);
     
     const output = new Uint8Array(16);
