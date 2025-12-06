@@ -100,8 +100,18 @@ go test -v ./...
 
 Documentation has been moved to the `plinko-pir-docs` repository.
 
-- **Implementation Details**: Technical deep-dive
-- **State Syncer README**: iPRF implementation details
+- **[Reference Alignment](docs/reference-alignment.md)**: Alignment with Plinko.v Coq specification
+- **[iPRF Optimization](docs/iprf-optimization.md)**: 87x speedup via normal approximation
+- **[Hint Generation](docs/hint-generation-optimization.md)**: Hint generation optimizations
+- **[Query Compression](docs/query-compression.md)**: Query size reduction techniques
+
+### Cryptographic Components
+
+| Component | Description | Location |
+|-----------|-------------|----------|
+| **Swap-or-Not PRP** | Morris-Rogaway small-domain PRP | `services/rabby-wallet/src/crypto/swap-or-not-prp.js` |
+| **iPRF v2** | Invertible PRF (PRP + PMNS) | `services/rabby-wallet/src/crypto/iprf-v2.js` |
+| **Plinko Hints** | Full hint lifecycle management | `services/rabby-wallet/src/crypto/plinko-hints.js` |
 
 ## Research Paper
 
